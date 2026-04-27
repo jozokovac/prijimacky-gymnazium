@@ -95,13 +95,32 @@ export default function App() {
   }, [game.gender]);
 
   useEffect(() => {
-    if (phase !== 'quiz') return;
+    if (phase !== 'quiz' && phase !== 'review') return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [phase]);
 
-  const elapsed = phase === 'quiz' ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
+  // Auto-advance from quiz to review when timer hits 0
+  useEffect(() => {
+    if (phase !== 'quiz') return;
+    const limit = MODES[mode].secondsPerQ * questions.length;
+    if (limit > 0 && elapsed >= limit) {
+      // Save any unsubmitted answer
+      if (given.trim()) {
+        const idx = order[slot];
+        const q = questions[idx];
+        const ok = isCorrect(q, given);
+        setAnswers((a) => [...a, { question: q, given, correct: ok, originalIndex: idx }]);
+      }
+      setPhase('review');
+    }
+  }, [elapsed, phase, mode, questions.length]);
+
+  const elapsed =
+    phase === 'quiz' || phase === 'review'
+      ? Math.max(0, Math.floor((now - startedAt) / 1000))
+      : 0;
   const elapsedStr = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(
     elapsed % 60,
   ).padStart(2, '0')}`;
@@ -970,10 +989,16 @@ function ReviewScreen(props: {
             </div>
           )}
         </div>
-        <div className="text-xs text-indigo-700/80 leading-relaxed bg-indigo-50 rounded-xl p-3">
-          💡 Máš ešte čas — preklikaj si odpovede, oprav si ich, ak treba. Odpovedať
-          napamäť je dobré, skontrolovať to ešte raz je lepšie. Klikni na otázku pre úpravu.
-        </div>
+        {props.secondsLimit > 0 && remaining === 0 ? (
+          <div className="text-xs text-rose-800 leading-relaxed bg-rose-50 border-2 border-rose-200 rounded-xl p-3 font-semibold animate-pulse">
+            ⏰ Čas vypršal — odovzdávam, čo máš…
+          </div>
+        ) : (
+          <div className="text-xs text-indigo-700/80 leading-relaxed bg-indigo-50 rounded-xl p-3">
+            💡 Máš ešte čas — preklikaj si odpovede, oprav si ich, ak treba. Odpovedať
+            napamäť je dobré, skontrolovať to ešte raz je lepšie. Klikni na otázku pre úpravu.
+          </div>
+        )}
       </div>
 
       <div className="space-y-2 mb-4">
