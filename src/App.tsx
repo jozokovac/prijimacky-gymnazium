@@ -42,9 +42,9 @@ const MODES: Record<
   Mode,
   { count: number; label: string; emoji: string; desc: string; secondsPerQ: number; defer: boolean }
 > = {
-  small:  { count: 5,  label: 'Tréning',    emoji: '🌸', desc: 'Učenie · odpoveď hneď',  secondsPerQ: 0,   defer: false },
-  medium: { count: 10, label: 'Malý test',  emoji: '⚡', desc: '20 min · ako test',       secondsPerQ: 120, defer: true  },
-  big:    { count: 20, label: 'Veľký test', emoji: '🎓', desc: '40 min · ako prijímačky', secondsPerQ: 120, defer: true  },
+  small:  { count: 5,  label: 'Tréning',    emoji: '🌸', desc: 'Učenie · odpoveď hneď',  secondsPerQ: 0,  defer: false },
+  medium: { count: 10, label: 'Malý test',  emoji: '⚡', desc: '15 min · ako test',       secondsPerQ: 90, defer: true  },
+  big:    { count: 20, label: 'Veľký test', emoji: '🎓', desc: '30 min · ako prijímačky', secondsPerQ: 90, defer: true  },
 };
 
 type Answer = { question: Question; given: string; correct: boolean; originalIndex: number };
@@ -101,6 +101,14 @@ export default function App() {
     return () => clearInterval(id);
   }, [phase]);
 
+  const elapsed =
+    phase === 'quiz' || phase === 'review'
+      ? Math.max(0, Math.floor((now - startedAt) / 1000))
+      : 0;
+  const elapsedStr = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(
+    elapsed % 60,
+  ).padStart(2, '0')}`;
+
   // Auto-advance from quiz to review when timer hits 0
   useEffect(() => {
     if (phase !== 'quiz') return;
@@ -116,14 +124,6 @@ export default function App() {
       setPhase('review');
     }
   }, [elapsed, phase, mode, questions.length]);
-
-  const elapsed =
-    phase === 'quiz' || phase === 'review'
-      ? Math.max(0, Math.floor((now - startedAt) / 1000))
-      : 0;
-  const elapsedStr = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(
-    elapsed % 60,
-  ).padStart(2, '0')}`;
 
   function startQuiz(opts?: { reviewOnly?: boolean }) {
     const reviewIds = opts?.reviewOnly ? reviewQuestionIds(game) : undefined;
