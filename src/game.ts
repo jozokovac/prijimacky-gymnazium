@@ -115,11 +115,7 @@ export type QStat = {
 
 const KEY = 'prijimacky-game-v1';
 
-export function loadGame(): GameState {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as GameState;
-  } catch {}
+function defaultGame(): GameState {
   return {
     name: null,
     gender: null,
@@ -138,6 +134,19 @@ export function loadGame(): GameState {
     recentScores: [],
     questionStats: {},
   };
+}
+
+export function loadGame(): GameState {
+  const defaults = defaultGame();
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<GameState>;
+      // Merge: ensure new fields added in later versions get safe defaults
+      return { ...defaults, ...parsed };
+    }
+  } catch {}
+  return defaults;
 }
 
 // Zaktualizuje stats konkrétnej otázky podľa toho, či bola zodpovedaná správne.
@@ -305,25 +314,29 @@ export type Odds = {
 };
 
 export function oddsOfAcceptance(game: GameState): Odds {
-  if (game.totalQuestions === 0) {
+  const totalQuestions = game.totalQuestions ?? 0;
+  const totalCorrect = game.totalCorrect ?? 0;
+  const totalQuizzes = game.totalQuizzes ?? 0;
+  const dailyStreak = game.dailyStreak ?? 0;
+  const perfectStreak = game.perfectStreak ?? 0;
+
+  if (totalQuestions === 0) {
     return { pct: BASE_ACCEPTANCE_RATE, trend: 'flat', confidence: 'low' };
   }
 
-  const accuracy = game.totalCorrect / game.totalQuestions; // 0..1
+  const accuracy = totalCorrect / totalQuestions; // 0..1
 
   // Accuracy nad 40 % posúva NAD priemer poolu, pod 40 % mierne dolu.
-  // 50 % → +11, 70 % → +33, 80 % → +44, 90 % → +55, 100 % → +66
-  // 40 % → 0, 30 % → −11, 20 % → −22 (poor)
   const accuracyDelta = (accuracy - 0.4) * 110;
 
   // Objem tréningu → vyššia istota (cap +12)
-  const volume = Math.min(12, Math.sqrt(game.totalQuizzes) * 3);
+  const volume = Math.min(12, Math.sqrt(totalQuizzes) * 3);
 
   // Denná séria → konzistencia, ktorá pri prijímačkách rozhoduje (cap +8)
-  const streakBoost = Math.min(8, game.dailyStreak * 1.0);
+  const streakBoost = Math.min(8, dailyStreak * 1.0);
 
   // Perfect streak → kvalita pod tlakom (cap +5)
-  const perfectBoost = Math.min(5, game.perfectStreak * 1.5);
+  const perfectBoost = Math.min(5, perfectStreak * 1.5);
 
   // Trend posledných 3 vs predchádzajúcich 3 testov
   let trendDelta = 0;
@@ -348,10 +361,11 @@ export function oddsOfAcceptance(game: GameState): Odds {
 
   let pct =
     BASE_ACCEPTANCE_RATE + accuracyDelta + volume + streakBoost + perfectBoost + trendDelta;
+  if (!Number.isFinite(pct)) pct = BASE_ACCEPTANCE_RATE;
   pct = Math.max(12, Math.min(92, pct));
 
   const confidence: Odds['confidence'] =
-    game.totalQuizzes >= 10 ? 'high' : game.totalQuizzes >= 3 ? 'medium' : 'low';
+    totalQuizzes >= 10 ? 'high' : totalQuizzes >= 3 ? 'medium' : 'low';
 
   return { pct: Math.round(pct), trend, confidence };
 }
