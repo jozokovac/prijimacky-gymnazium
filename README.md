@@ -6,11 +6,46 @@ rodičov.
 
 ## ▶️ Otvor appku
 
-**🔗 https://jozokovac.github.io/prijimacky-gymnazium/**
+**🔗 https://genius.ayanza.com/**
 
-Funguje hneď v mobilnom prehliadači. Pre najlepší zážitok ju **pridaj na plochu**
-(Safari → Zdieľať → Pridať na plochu / Chrome → ⋮ → Inštalovať appku).
-Vtedy bude vyzerať ako fakt-appka a údaje sa nestrácajú.
+Funguje hneď v mobilnom prehliadači. **Pre najlepší zážitok ju nainštaluj ako
+appku** — vyzerá ako natívna apka, beží na celý displej, **funguje aj offline**
+a má vlastnú ikonu na ploche.
+
+### Ako nainštalovať appku
+
+**📱 iPhone / iPad (Safari):**
+1. Otvor https://genius.ayanza.com/ v **Safari** (musí byť Safari, nie Chrome!)
+2. Klepni na ikonu **Zdieľať** ⬆️ (štvorček so šípkou hore)
+3. Sleduj zoznam dole, vyber **„Pridať na plochu"**
+4. Klepni **„Pridať"** vpravo hore → ikona sovičky sa objaví na ploche
+
+**🤖 Android (Chrome):**
+1. Otvor https://genius.ayanza.com/ v Chrome
+2. Klepni na **⋮** (tri bodky vpravo hore)
+3. Vyber **„Inštalovať aplikáciu"** alebo **„Pridať na plochu"**
+4. Potvrď **Inštalovať**
+
+**💻 Desktop (Chrome / Edge):**
+1. Otvor stránku v prehliadači
+2. V adresnom riadku napravo bude ikona ⊕ alebo „Inštalovať"
+3. Klikni → potvrď
+
+### ⚠️ Pozor: progress sa pri inštalácii môže resetnúť
+
+Keď si appku otvoril v prehliadači a potom ju nainštaluješ na plochu, môže sa
+stať, že **inštalovaná verzia uvidí prázdne dáta** (iný storage scope). XP, level,
+odznaky, denná séria — všetko od nuly.
+
+**Najlepšia stratégia:**
+1. **Nainštaluj appku PRV ako začneš trénovať** (otvoríš link → hneď „Pridať na
+   plochu" bez registrácie mena).
+2. Až potom otvor inštalovanú appku z plochy a urob onboarding (meno, pohlavie).
+3. Od tej chvíle hraj **iba cez inštalovanú appku** (nie cez Safari/Chrome) —
+   všetok progres sa udrží.
+
+Ak ti progres už raz reštartoval po inštalácii — nevadí, len sa nám potvrdilo,
+že to si zachoval pre Eli, lebo „je to také cool keď je to natívne". Vďaka.
 
 ---
 
