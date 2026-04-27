@@ -21,11 +21,10 @@ import {
   type Reward,
   type RewardId,
   unlockedRewardIds,
-  nextVoucherForLevel,
   readSeenRewards,
   writeSeenRewards,
 } from './rewards';
-import { examCountdownLabel, motivationalLine, daysUntilExam, daysUntilSecondRound } from './exam';
+import { motivationalLine, daysUntilExam, examCountdownLabel } from './exam';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'review' | 'results' | 'progress';
@@ -502,47 +501,6 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string, gender: 'girl' | 'b
   );
 }
 
-// ====================== HEADER STRIP ======================
-function LevelBar({ game, onClick }: { game: GameState; onClick?: () => void }) {
-  const { level, current, needed, pct } = levelProgress(game.xp);
-  return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-white/80 backdrop-blur rounded-2xl shadow-md shadow-indigo-200/40 p-3 sm:p-4 active:scale-[0.99] transition-all"
-    >
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-white font-bold shadow-md">
-            {level}
-          </span>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold text-indigo-950">Level {level}</div>
-            <div className="text-xs text-indigo-700/70">
-              {game.xp} XP · {current}/{needed} do ďalšieho
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          {game.dailyStreak > 0 && (
-            <div className="flex items-center gap-1 font-semibold text-orange-600">
-              🔥 {game.dailyStreak}d
-            </div>
-          )}
-          <div className="flex items-center gap-1 font-semibold text-indigo-700">
-            🏅 {game.badges.length}
-          </div>
-        </div>
-      </div>
-      <div className="h-2 w-full bg-indigo-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-amber-400 via-pink-500 to-indigo-500 transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </button>
-  );
-}
-
 // ====================== HOME ======================
 function Home(props: {
   subject: Subject;
@@ -561,9 +519,6 @@ function Home(props: {
     { id: 'slovencina', label: 'Slovina', emoji: '📚' },
   ];
 
-  const level = levelFromXp(props.game.xp);
-  const next = nextVoucherForLevel(level);
-  const xpToNext = next && next.unlock.kind === 'level' ? xpForLevel(next.unlock.level) - props.game.xp : 0;
   const greeting = props.game.totalQuizzes === 0
     ? `${gen(props.game.gender, 'Pripravená', 'Pripravený')}, ${props.game.name}? 🌟`
     : props.game.dailyStreak >= 2
@@ -581,39 +536,10 @@ function Home(props: {
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-indigo-950 leading-tight mt-0.5">
           {greeting}
         </h1>
-        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-700 font-bold text-xs">
-          ⏳ {examCountdownLabel()}
-        </div>
-        <p className="mt-2 text-sm text-indigo-700/80 px-2">{subline}</p>
+        <p className="mt-1 text-xs text-indigo-700/70 px-2 line-clamp-2">{subline}</p>
       </header>
 
-      <div className="mb-3">
-        <LevelBar game={props.game} onClick={props.onShowProgress} />
-      </div>
-
-      <OddsCard game={props.game} />
-
-      <DailyStreakBanner game={props.game} />
-
-      <ExamCard />
-
-
-      {next && (
-        <button
-          onClick={props.onShowProgress}
-          className="w-full mb-3 bg-gradient-to-r from-amber-50 to-pink-50 border-2 border-amber-200 rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-all"
-        >
-          <div className="text-3xl shrink-0">{next.emoji}</div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-[10px] uppercase font-bold text-amber-700 tracking-wide">
-              Ďalšia odmena na leveli {(next.unlock as any).level}
-            </div>
-            <div className="font-bold text-indigo-950 text-sm truncate">{next.title}</div>
-            <div className="text-xs text-indigo-700/70">ešte {xpToNext} XP</div>
-          </div>
-          <div className="text-amber-600 text-xl">›</div>
-        </button>
-      )}
+      <StatsHero game={props.game} onClick={props.onShowProgress} />
 
       <section className="bg-white/70 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-3">
         <h2 className="text-base sm:text-lg font-semibold text-indigo-950 mb-3">Predmet</h2>
@@ -678,7 +604,7 @@ function Home(props: {
           onClick={props.onStart}
           className="w-full mt-6 py-4 sm:py-5 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] via-[var(--grad-via)] to-[var(--grad-to)] text-white font-bold text-lg sm:text-xl shadow-lg shadow-fuchsia-300/40 active:scale-[0.98] transition-all"
         >
-          ✨ Spustiť tréning
+          {props.mode === 'small' ? '✨ Spustiť tréning' : '🎯 Spustiť test'}
         </button>
       </section>
 
@@ -1585,9 +1511,12 @@ function BadgeChip({ id }: { id: BadgeId }) {
   );
 }
 
-function OddsCard({ game }: { game: GameState }) {
+// Konsolidovaný hero — level + XP + streak + odds + countdown v jednej karte.
+function StatsHero({ game, onClick }: { game: GameState; onClick: () => void }) {
+  const { level, current, needed, pct } = levelProgress(game.xp);
   const odds = oddsOfAcceptance(game);
-  const color =
+  const examDays = daysUntilExam();
+  const oddsColor =
     odds.pct >= 70
       ? 'from-emerald-500 to-teal-500'
       : odds.pct >= 50
@@ -1603,135 +1532,74 @@ function OddsCard({ game }: { game: GameState }) {
       ? 'text-rose-500'
       : 'text-indigo-400';
 
-  const subtitle =
-    game.totalQuizzes === 0
-      ? 'Východisko ~15 % (~25 prijatých z ~250). Tréningom rastie!'
-      : odds.confidence === 'low'
-      ? 'Ešte pár testov a odhad sa upresní'
-      : odds.trend === 'up'
-      ? 'Stúpa! Pokračuj v tempe.'
-      : odds.trend === 'down'
-      ? 'Mierny pokles — zajtra to zlomíš.'
-      : 'Držíš tempo — pokračuj!';
-
   return (
-    <div className="mb-3 bg-white/85 backdrop-blur rounded-2xl shadow-md p-3 sm:p-4 border-2 border-white">
-      <div className="flex items-center justify-between mb-2 gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase font-bold tracking-widest text-indigo-700/70">
-            Šanca na prijatie 🎓
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-3xl font-black text-indigo-950 tabular-nums">{odds.pct}%</span>
-            <span className={`text-xl font-bold ${trendColor}`}>{trendIcon}</span>
-          </div>
-        </div>
-        <div className="text-[11px] text-indigo-700/70 text-right shrink-0 max-w-[60%] leading-snug">
-          {subtitle}
-        </div>
-      </div>
-      <div className="h-3 w-full bg-indigo-100 rounded-full overflow-hidden relative">
-        {/* base-rate marker at 15% */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-indigo-400/60 z-10"
-          style={{ left: '15%' }}
-          title="Východisková šanca pre uchádzača bez tréningu"
-        />
-        <div
-          className={`h-full bg-gradient-to-r ${color} transition-all duration-700`}
-          style={{ width: `${odds.pct}%` }}
-        />
-      </div>
-      <div className="text-[9px] text-indigo-500/70 mt-1 flex justify-between">
-        <span>0 %</span>
-        <span className="ml-[12%]">↑ priemer poolu</span>
-        <span>100 %</span>
-      </div>
-    </div>
-  );
-}
-
-function DailyStreakBanner({ game }: { game: GameState }) {
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const playedToday = game.lastPlayedDate === todayStr;
-  const yest = new Date(today);
-  yest.setDate(yest.getDate() - 1);
-  const yestStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
-  const playedYesterday = game.lastPlayedDate === yestStr;
-
-  if (game.dailyStreak === 0 && !playedToday) {
-    return (
-      <div className="mb-3 rounded-2xl bg-gradient-to-r from-orange-100 to-amber-100 p-3 flex items-center gap-3 border-2 border-orange-200">
-        <div className="text-3xl">🔥</div>
-        <div className="flex-1 text-sm">
-          <div className="font-bold text-orange-900">Začni dennú sériu!</div>
-          <div className="text-[11px] text-orange-800/80">Trénuj každý deň a sleduj, ako tvoj plameň rastie.</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Has streak — emphasize it
-  const flame = game.dailyStreak >= 7 ? '🔥🔥🔥' : game.dailyStreak >= 3 ? '🔥🔥' : '🔥';
-  return (
-    <div
-      className={`mb-3 rounded-2xl p-3 flex items-center gap-3 border-2 ${
-        playedToday
-          ? 'bg-gradient-to-r from-orange-100 via-amber-100 to-rose-100 border-orange-300 shadow-md'
-          : playedYesterday
-          ? 'bg-gradient-to-r from-rose-100 to-amber-100 border-rose-300 animate-pulse'
-          : 'bg-orange-50 border-orange-200'
-      }`}
+    <button
+      onClick={onClick}
+      className="w-full text-left mb-3 bg-white/85 backdrop-blur rounded-2xl shadow-md shadow-indigo-200/40 p-3 sm:p-4 active:scale-[0.99] transition-all space-y-3"
     >
-      <div className="text-3xl shrink-0">{flame}</div>
-      <div className="flex-1 min-w-0">
-        <div className="font-black text-orange-900 text-base leading-tight">
-          {game.dailyStreak} {game.dailyStreak === 1 ? 'deň' : game.dailyStreak < 5 ? 'dni' : 'dní'} v rade
-        </div>
-        <div className="text-[11px] text-orange-800/80 leading-tight mt-0.5">
-          {playedToday
-            ? `Dnes si už ${gen(game.gender, 'trénovala', 'trénoval')} — séria pokračuje! 🌟`
-            : playedYesterday
-            ? `Dnes si ešte ${gen(game.gender, 'netrénovala', 'netrénoval')} — nedaj zhasnúť plameň ${game.dailyStreak} dní!`
-            : 'Vráť sa dnes a obnov svoju sériu!'}
-        </div>
-      </div>
-      <div className="text-2xl font-black text-orange-700 shrink-0">{game.dailyStreak}</div>
-    </div>
-  );
-}
-
-function ExamCard() {
-  const d1 = daysUntilExam();
-  const d2 = daysUntilSecondRound();
-  return (
-    <div className="mb-3 rounded-2xl bg-white/80 backdrop-blur shadow-md p-3 sm:p-4 border-2 border-rose-100">
-      <div className="flex items-center gap-3">
-        <div className="text-2xl shrink-0">🎓</div>
+      {/* Top row: level + chips */}
+      <div className="flex items-center gap-2.5">
+        <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-white font-black shadow-md shrink-0">
+          {level}
+        </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase font-bold tracking-wide text-rose-700">
-            Prijímačky 2026
+          <div className="flex items-baseline gap-1">
+            <span className="text-sm font-bold text-indigo-950">Level {level}</span>
+            <span className="text-[11px] text-indigo-700/70">· {current}/{needed} XP</span>
           </div>
-          <div className="text-sm font-semibold text-indigo-950 leading-tight">
-            <span className="text-rose-700">1. termín · 4. máj</span> ·{' '}
-            <span className="text-indigo-700">2. termín · 11. máj</span>
-          </div>
-          <div className="text-[11px] text-indigo-700/70 mt-0.5">
-            Máš 2 voľby na prihláške — 4 šance ukázať, čo vieš ✨
+          <div className="h-1.5 w-full bg-indigo-100 rounded-full overflow-hidden mt-1">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 via-pink-500 to-indigo-500 transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-2xl font-black text-rose-600 leading-none">{d1}</div>
-          <div className="text-[10px] uppercase tracking-wide text-rose-600/80">
-            {d1 === 1 ? 'deň' : d1 < 5 ? 'dni' : 'dní'}
-          </div>
-          {d2 > d1 && (
-            <div className="text-[10px] text-indigo-500/80 mt-0.5">+{d2 - d1} k 2. termínu</div>
+        <div className="flex items-center gap-1.5 text-xs font-bold shrink-0">
+          {game.dailyStreak > 0 && (
+            <span className="text-orange-600">🔥{game.dailyStreak}</span>
+          )}
+          {game.badges.length > 0 && (
+            <span className="text-indigo-700">🏅{game.badges.length}</span>
           )}
         </div>
       </div>
-    </div>
+
+      {/* Odds bar */}
+      <div>
+        <div className="flex items-baseline justify-between mb-1">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-700/70">
+              Šanca na prijatie 🎓
+            </span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-lg font-black text-indigo-950 tabular-nums">{odds.pct}%</span>
+            <span className={`text-base font-bold ${trendColor}`}>{trendIcon}</span>
+          </div>
+        </div>
+        <div className="h-2 w-full bg-indigo-100 rounded-full overflow-hidden relative">
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-indigo-400/60 z-10"
+            style={{ left: '15%' }}
+          />
+          <div
+            className={`h-full bg-gradient-to-r ${oddsColor} transition-all duration-700`}
+            style={{ width: `${odds.pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Bottom row: exam countdown */}
+      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-indigo-100">
+        <span className="text-indigo-700/80">
+          🎓 Prijímačky · 1. termín 4. máj · 2. termín 11. máj
+        </span>
+        <span className="font-bold text-rose-700 tabular-nums">
+          {examDays}
+          {examDays === 1 ? ' deň' : examDays < 5 ? ' dni' : ' dní'}
+        </span>
+      </div>
+    </button>
   );
 }
 
