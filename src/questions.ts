@@ -785,7 +785,20 @@ const slovak: Question[] = [
   },
 ];
 
-export const allQuestions: Question[] = [...math, ...slovak];
+// Doplnkové balíky otázok (generované pomocou subagentov).
+import { pack as packMath1 } from './questions-pack-math-1';
+import { pack as packMath2 } from './questions-pack-math-2';
+import { pack as packSlovak1 } from './questions-pack-slovak-1';
+import { pack as packSlovak2 } from './questions-pack-slovak-2';
+
+export const allQuestions: Question[] = [
+  ...math,
+  ...slovak,
+  ...packMath1,
+  ...packMath2,
+  ...packSlovak1,
+  ...packSlovak2,
+];
 
 export function pickQuestions(
   subject: 'matematika' | 'slovencina' | 'mix',

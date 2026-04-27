@@ -84,12 +84,14 @@ export const BADGES: Record<BadgeId, Badge> = {
 };
 
 export type GameState = {
+  name: string | null;
   xp: number;
   totalQuizzes: number;
   totalCorrect: number;
   totalQuestions: number;
   bestScore: number;
   bestStreak: number;
+  perfectStreak: number;
   mathCorrect: number;
   slovakCorrect: number;
   badges: BadgeId[];
@@ -106,12 +108,14 @@ export function loadGame(): GameState {
     if (raw) return JSON.parse(raw) as GameState;
   } catch {}
   return {
+    name: null,
     xp: 0,
     totalQuizzes: 0,
     totalCorrect: 0,
     totalQuestions: 0,
     bestScore: 0,
     bestStreak: 0,
+    perfectStreak: 0,
     mathCorrect: 0,
     slovakCorrect: 0,
     badges: [],
@@ -154,6 +158,7 @@ export type AwardResult = {
   xpGained: number;
   newBadges: BadgeId[];
   leveledUpTo: number | null;
+  newPerfectStreak: number;
 };
 
 function todayStr(): string {
@@ -192,6 +197,8 @@ export function awardForQuiz(prev: GameState, summary: {
     dailyStreak = 1;
   }
 
+  const newPerfectStreak = perfect ? prev.perfectStreak + 1 : 0;
+
   const next: GameState = {
     ...prev,
     xp: prev.xp + xpGained,
@@ -200,6 +207,7 @@ export function awardForQuiz(prev: GameState, summary: {
     totalQuestions: prev.totalQuestions + summary.total,
     bestScore: Math.max(prev.bestScore, Math.round((summary.correct / summary.total) * 100)),
     bestStreak: Math.max(prev.bestStreak, summary.bestStreakInQuiz),
+    perfectStreak: newPerfectStreak,
     mathCorrect: prev.mathCorrect + summary.mathCorrect,
     slovakCorrect: prev.slovakCorrect + summary.slovakCorrect,
     badges: [...prev.badges],
@@ -230,7 +238,7 @@ export function awardForQuiz(prev: GameState, summary: {
   const newLevel = levelFromXp(next.xp);
   const leveledUpTo = newLevel > prevLevel ? newLevel : null;
 
-  return { next, xpGained, newBadges, leveledUpTo };
+  return { next, xpGained, newBadges, leveledUpTo, newPerfectStreak };
 }
 
 // Migrácia zo starého kľúča prijimacky-stats-v1 (ak existuje)

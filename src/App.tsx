@@ -10,18 +10,35 @@ import {
   migrateOldStats,
   awardForQuiz,
   levelProgress,
+  levelFromXp,
+  xpForLevel,
 } from './game';
+import {
+  REWARDS,
+  type Reward,
+  type RewardId,
+  unlockedRewardIds,
+  nextRewardForLevel,
+  readSeenRewards,
+  writeSeenRewards,
+} from './rewards';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
-type Phase = 'home' | 'quiz' | 'results';
+type Phase = 'home' | 'quiz' | 'results' | 'progress';
 
-type Answer = {
-  question: Question;
-  given: string;
-  correct: boolean;
+type Answer = { question: Question; given: string; correct: boolean };
+
+type Award = {
+  xpGained: number;
+  newBadges: BadgeId[];
+  leveledUpTo: number | null;
+  newRewards: Reward[];
 };
 
+const img = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
 export default function App() {
+  const [game, setGame] = useState<GameState>(() => migrateOldStats(loadGame()));
   const [phase, setPhase] = useState<Phase>('home');
   const [subject, setSubject] = useState<Subject>('mix');
   const [count, setCount] = useState(10);
@@ -32,15 +49,9 @@ export default function App() {
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [streak, setStreak] = useState(0);
   const [bestStreakInQuiz, setBestStreakInQuiz] = useState(0);
-  const [game, setGame] = useState<GameState>(() => migrateOldStats(loadGame()));
   const [startedAt, setStartedAt] = useState<number>(0);
   const [now, setNow] = useState<number>(0);
-  const [award, setAward] = useState<{
-    xpGained: number;
-    newBadges: BadgeId[];
-    leveledUpTo: number | null;
-  } | null>(null);
-  const [showBadges, setShowBadges] = useState(false);
+  const [award, setAward] = useState<Award | null>(null);
 
   useEffect(() => {
     saveGame(game);
@@ -104,18 +115,34 @@ export default function App() {
       const slovakCorrect = answers.filter(
         (a) => a.correct && a.question.subject === 'slovencina',
       ).length;
-      const result = awardForQuiz(game, {
+
+      const before = game;
+      const result = awardForQuiz(before, {
         total: questions.length,
         correct,
         bestStreakInQuiz,
         mathCorrect,
         slovakCorrect,
       });
+
+      const seen = readSeenRewards();
+      const beforeIds = unlockedRewardIds(before);
+      const afterIds = unlockedRewardIds(result.next);
+      const newRewards: Reward[] = [];
+      for (const r of REWARDS) {
+        if (afterIds.has(r.id) && !beforeIds.has(r.id) && !seen.has(r.id)) {
+          newRewards.push(r);
+          seen.add(r.id);
+        }
+      }
+      writeSeenRewards(seen);
+
       setGame(result.next);
       setAward({
         xpGained: result.xpGained,
         newBadges: result.newBadges,
         leveledUpTo: result.leveledUpTo,
+        newRewards,
       });
       if (correct === questions.length) {
         confetti({
@@ -125,6 +152,18 @@ export default function App() {
           colors: ['#ec4899', '#a855f7', '#6366f1', '#fbbf24', '#10b981'],
         });
       }
+      if (newRewards.length > 0) {
+        setTimeout(
+          () =>
+            confetti({
+              particleCount: 250,
+              spread: 120,
+              origin: { y: 0.4 },
+              colors: ['#fbbf24', '#f59e0b', '#ec4899', '#a855f7'],
+            }),
+          400,
+        );
+      }
       setPhase('results');
     } else {
       setCurrent((c) => c + 1);
@@ -133,8 +172,15 @@ export default function App() {
     }
   }
 
-  if (showBadges) {
-    return <BadgesScreen game={game} onBack={() => setShowBadges(false)} />;
+  // Onboarding
+  if (!game.name) {
+    return (
+      <Onboarding onSubmit={(name) => setGame((g) => ({ ...g, name }))} />
+    );
+  }
+
+  if (phase === 'progress') {
+    return <ProgressScreen game={game} onBack={() => setPhase('home')} />;
   }
 
   if (phase === 'home') {
@@ -145,8 +191,8 @@ export default function App() {
         count={count}
         setCount={setCount}
         onStart={startQuiz}
+        onShowProgress={() => setPhase('progress')}
         game={game}
-        onShowBadges={() => setShowBadges(true)}
       />
     );
   }
@@ -179,14 +225,15 @@ export default function App() {
       next={next}
       elapsedStr={elapsedStr}
       streak={streak}
+      name={game.name}
     />
   );
 }
 
 function Container({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-[100dvh] w-full px-3 py-4 sm:px-4 sm:py-8 flex justify-center">
-      <div className="w-full max-w-2xl">{children}</div>
+    <div className="min-h-[100svh] w-full flex justify-center px-3 py-4 sm:px-4 sm:py-6">
+      <div className="w-full max-w-2xl flex flex-col">{children}</div>
     </div>
   );
 }
@@ -200,14 +247,14 @@ function Mascot({
 }) {
   const src =
     variant === 'cheer'
-      ? `${import.meta.env.BASE_URL}images/mascot-cheer.png`
+      ? img('images/mascot-cheer.png')
       : variant === 'think'
-      ? `${import.meta.env.BASE_URL}images/mascot-think.png`
-      : `${import.meta.env.BASE_URL}images/mascot.png`;
+      ? img('images/mascot-think.png')
+      : img('images/mascot.png');
   return (
     <img
       src={src}
-      alt="Sovička"
+      alt=""
       className={`drop-shadow-lg ${className}`}
       onError={(e) => {
         (e.currentTarget as HTMLImageElement).style.display = 'none';
@@ -216,10 +263,58 @@ function Mascot({
   );
 }
 
-function LevelBar({ game }: { game: GameState }) {
+// ====================== ONBOARDING ======================
+function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
+  const [name, setName] = useState('');
+  return (
+    <Container>
+      <div className="text-center pt-6">
+        <Mascot className="w-32 h-32 sm:w-40 sm:h-40 mx-auto" />
+        <div className="text-xs uppercase font-bold tracking-widest text-pink-600 mt-2">
+          Mini Genius akadémia
+        </div>
+        <h1 className="text-3xl sm:text-4xl font-black text-indigo-950 mt-1 leading-tight">
+          Vitaj v akadémii!
+        </h1>
+        <p className="text-indigo-700/80 mt-3">
+          Som tvoja sovička-tútorka. Ako sa voláš?
+        </p>
+      </div>
+      <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-5 sm:p-6 mt-6">
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && name.trim()) onSubmit(name.trim());
+          }}
+          placeholder="napr. Eli"
+          maxLength={20}
+          className="w-full px-5 py-4 rounded-2xl border-2 border-indigo-200 bg-white text-xl text-center text-indigo-950 focus:border-indigo-500 focus:outline-none"
+        />
+        <button
+          disabled={!name.trim()}
+          onClick={() => onSubmit(name.trim())}
+          className="w-full mt-4 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-indigo-500 text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
+        >
+          Začnime ✨
+        </button>
+      </div>
+      <p className="text-center text-xs text-indigo-700/60 mt-6">
+        Ukáž svoj talent · Trénuj prijímačky · Odomykaj odmeny
+      </p>
+    </Container>
+  );
+}
+
+// ====================== HEADER STRIP ======================
+function LevelBar({ game, onClick }: { game: GameState; onClick?: () => void }) {
   const { level, current, needed, pct } = levelProgress(game.xp);
   return (
-    <div className="bg-white/80 backdrop-blur rounded-2xl shadow-md shadow-indigo-200/40 p-3 sm:p-4">
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-white/80 backdrop-blur rounded-2xl shadow-md shadow-indigo-200/40 p-3 sm:p-4 active:scale-[0.99] transition-all"
+    >
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-white font-bold shadow-md">
@@ -249,49 +344,79 @@ function LevelBar({ game }: { game: GameState }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-    </div>
+    </button>
   );
 }
 
+// ====================== HOME ======================
 function Home(props: {
   subject: Subject;
   setSubject: (s: Subject) => void;
   count: number;
   setCount: (n: number) => void;
   onStart: () => void;
+  onShowProgress: () => void;
   game: GameState;
-  onShowBadges: () => void;
 }) {
   const subjects: { id: Subject; label: string; emoji: string }[] = [
     { id: 'mix', label: 'Mix', emoji: '🎯' },
-    { id: 'matematika', label: 'Matematika', emoji: '🔢' },
-    { id: 'slovencina', label: 'Slovenčina', emoji: '📚' },
+    { id: 'matematika', label: 'Matika', emoji: '🔢' },
+    { id: 'slovencina', label: 'Slovina', emoji: '📚' },
   ];
+
+  const level = levelFromXp(props.game.xp);
+  const next = nextRewardForLevel(level);
+  const xpToNext = next && next.unlock.kind === 'level' ? xpForLevel(next.unlock.level) - props.game.xp : 0;
+  const greeting = props.game.totalQuizzes === 0
+    ? `Ahoj ${props.game.name}! 🌟`
+    : props.game.dailyStreak >= 2
+    ? `Vitaj späť, ${props.game.name}! 🔥`
+    : `Ahoj ${props.game.name}!`;
 
   return (
     <Container>
-      <header className="text-center mb-5 sm:mb-8">
-        <Mascot className="w-28 h-28 sm:w-32 sm:h-32 mx-auto -mb-2" />
-        <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-indigo-950 leading-tight">
-          Prijímačky na 8-ročné gymnázium
+      <header className="text-center mb-4">
+        <Mascot className="w-24 h-24 sm:w-28 sm:h-28 mx-auto -mb-1" />
+        <div className="text-[11px] uppercase font-bold tracking-widest text-pink-600">
+          Mini Genius akadémia
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-indigo-950 leading-tight mt-0.5">
+          {greeting}
         </h1>
-        <p className="mt-2 text-sm sm:text-base text-indigo-700/80">
-          Tréning testov · slovenčina + matematika · 5. ročník
+        <p className="mt-1 text-sm text-indigo-700/80">
+          Ukáž svoj talent · Zvládni prijímačky 🎓
         </p>
       </header>
 
-      <div className="mb-4">
-        <LevelBar game={props.game} />
+      <div className="mb-3">
+        <LevelBar game={props.game} onClick={props.onShowProgress} />
       </div>
 
-      <section className="bg-white/70 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-4">
-        <h2 className="text-base sm:text-lg font-semibold text-indigo-950 mb-3">Vyber predmet</h2>
+      {next && (
+        <button
+          onClick={props.onShowProgress}
+          className="w-full mb-3 bg-gradient-to-r from-amber-50 to-pink-50 border-2 border-amber-200 rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-all"
+        >
+          <div className="text-3xl shrink-0">{next.emoji}</div>
+          <div className="flex-1 text-left min-w-0">
+            <div className="text-[10px] uppercase font-bold text-amber-700 tracking-wide">
+              Ďalšia odmena na leveli {(next.unlock as any).level}
+            </div>
+            <div className="font-bold text-indigo-950 text-sm truncate">{next.title}</div>
+            <div className="text-xs text-indigo-700/70">ešte {xpToNext} XP</div>
+          </div>
+          <div className="text-amber-600 text-xl">›</div>
+        </button>
+      )}
+
+      <section className="bg-white/70 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-3">
+        <h2 className="text-base sm:text-lg font-semibold text-indigo-950 mb-3">Predmet</h2>
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {subjects.map((s) => (
             <button
               key={s.id}
               onClick={() => props.setSubject(s.id)}
-              className={`rounded-2xl p-3 sm:p-4 border-2 transition-all touch-manipulation min-h-[88px] flex flex-col items-center justify-center text-center ${
+              className={`rounded-2xl p-3 sm:p-4 border-2 transition-all min-h-[88px] flex flex-col items-center justify-center text-center ${
                 props.subject === s.id
                   ? 'border-indigo-500 bg-indigo-50 shadow-md scale-[1.02]'
                   : 'border-transparent bg-white active:scale-95'
@@ -311,7 +436,7 @@ function Home(props: {
             <button
               key={n}
               onClick={() => props.setCount(n)}
-              className={`py-3 rounded-xl font-bold transition-all touch-manipulation ${
+              className={`py-3 rounded-xl font-bold transition-all ${
                 props.count === n
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'bg-white text-indigo-700 active:scale-95'
@@ -331,27 +456,27 @@ function Home(props: {
       </section>
 
       <button
-        onClick={props.onShowBadges}
-        className="w-full bg-white/70 backdrop-blur rounded-2xl shadow-md p-4 flex items-center gap-3 active:scale-[0.98] transition-all"
+        onClick={props.onShowProgress}
+        className="w-full bg-white/70 backdrop-blur rounded-2xl shadow-md p-4 flex items-center gap-3 active:scale-[0.99] transition-all"
       >
-        <div className="text-3xl">🏅</div>
+        <div className="text-3xl">🏆</div>
         <div className="flex-1 text-left">
-          <div className="font-semibold text-indigo-950">Odznaky a štatistiky</div>
+          <div className="font-semibold text-indigo-950">Levely, odznaky a odmeny</div>
           <div className="text-xs text-indigo-700/70">
-            {props.game.badges.length} z {Object.keys(BADGES).length} · najlepšia séria{' '}
-            {props.game.bestStreak}
+            Pozri si, čo všetko môžeš odomknúť
           </div>
         </div>
         <div className="text-indigo-400 text-xl">›</div>
       </button>
 
-      <p className="text-center text-[11px] text-indigo-700/60 mt-6">
-        Otázky v štýle prijímačiek z gympaba.sk, gamca.sk, gymlsba.edupage.org
+      <p className="text-center text-[11px] text-indigo-700/60 mt-5">
+        Otázky v štýle prijímačiek na osemročné gymnáziá v BA
       </p>
     </Container>
   );
 }
 
+// ====================== QUIZ ======================
 function Quiz(props: {
   q: Question;
   index: number;
@@ -363,19 +488,30 @@ function Quiz(props: {
   next: () => void;
   elapsedStr: string;
   streak: number;
+  name: string;
 }) {
-  const { q, index, total, given, setGiven, reveal, submit, next, elapsedStr, streak } = props;
+  const { q, index, total, given, setGiven, reveal, submit, next, elapsedStr, streak, name } = props;
   const progress = ((index + (reveal ? 1 : 0)) / total) * 100;
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (q.type === 'text' && !reveal) {
-      // Don't autofocus on mobile (keyboard pops up). Only focus on >=md.
       if (window.matchMedia('(min-width: 768px)').matches) {
         inputRef.current?.focus();
       }
     }
   }, [q.id, q.type, reveal]);
+
+  const correctMsg = useMemo(() => {
+    const opts = [
+      `Výborne, ${name}! 🎉`,
+      `${name}, ty si génius! ✨`,
+      `Bomba, ${name}!`,
+      `Skvelé, ${name}! 🌟`,
+      `Presne tak, ${name}!`,
+    ];
+    return opts[Math.floor(Math.random() * opts.length)];
+  }, [reveal?.correct, q.id]);
 
   return (
     <Container>
@@ -426,7 +562,7 @@ function Quiz(props: {
                   key={c.id}
                   disabled={!!reveal}
                   onClick={() => setGiven(c.id)}
-                  className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all flex items-center gap-3 touch-manipulation ${
+                  className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all flex items-center gap-3 ${
                     isAnswer
                       ? 'border-emerald-500 bg-emerald-50'
                       : isWrongPick
@@ -436,9 +572,7 @@ function Quiz(props: {
                       : 'border-transparent bg-white active:scale-[0.99]'
                   } ${reveal ? 'cursor-default' : 'cursor-pointer'}`}
                 >
-                  <span className="font-bold text-indigo-700 uppercase shrink-0 w-6">
-                    {c.id})
-                  </span>
+                  <span className="font-bold text-indigo-700 uppercase shrink-0 w-6">{c.id})</span>
                   <span className="text-indigo-950 flex-1">{c.text}</span>
                   {isAnswer && <span className="text-emerald-600 font-bold">✓</span>}
                   {isWrongPick && <span className="text-rose-500 font-bold">✗</span>}
@@ -478,7 +612,7 @@ function Quiz(props: {
             />
             <div className="flex-1 min-w-0">
               <div className="font-bold text-base sm:text-lg mb-1">
-                {reveal.correct ? '🎉 Výborne, správne!' : '🤔 Nevadí, skús sa to zapamätať.'}
+                {reveal.correct ? correctMsg : `Nevadí, ${name}, skús sa to zapamätať. 🤔`}
               </div>
               {!reveal.correct && (
                 <div className="text-sm text-indigo-900">
@@ -498,7 +632,6 @@ function Quiz(props: {
         )}
       </div>
 
-      {/* Sticky action bar on mobile for thumb-reach */}
       <div className="sticky bottom-3 mt-4">
         {!reveal ? (
           <button
@@ -521,10 +654,11 @@ function Quiz(props: {
   );
 }
 
+// ====================== RESULTS ======================
 function Results(props: {
   answers: Answer[];
   elapsed: string;
-  award: { xpGained: number; newBadges: BadgeId[]; leveledUpTo: number | null } | null;
+  award: Award | null;
   game: GameState;
   onAgain: () => void;
 }) {
@@ -533,11 +667,11 @@ function Results(props: {
   const pct = Math.round((correct / total) * 100);
 
   const message = useMemo(() => {
-    if (pct === 100) return { emoji: '🏆', text: 'Úžasné! Stopercentne!' };
-    if (pct >= 80) return { emoji: '🌟', text: 'Skvelá práca!' };
-    if (pct >= 60) return { emoji: '💪', text: 'Dobre, ešte trošku tréningu!' };
-    return { emoji: '📚', text: 'Skús ešte raz, naučíš sa to!' };
-  }, [pct]);
+    if (pct === 100) return { emoji: '🏆', text: `Úžasné, ${props.game.name}! Stopercentne!` };
+    if (pct >= 80) return { emoji: '🌟', text: `Skvelá práca, ${props.game.name}!` };
+    if (pct >= 60) return { emoji: '💪', text: `Dobre, ${props.game.name}, ešte trošku tréningu!` };
+    return { emoji: '📚', text: `Skús ešte raz, ${props.game.name}, naučíš sa to!` };
+  }, [pct, props.game.name]);
 
   return (
     <Container>
@@ -546,7 +680,7 @@ function Results(props: {
           variant={pct >= 80 ? 'cheer' : pct >= 50 ? 'default' : 'think'}
           className="w-28 h-28 sm:w-32 sm:h-32 mx-auto -mb-2"
         />
-        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-950">
+        <h1 className="text-xl sm:text-2xl font-bold text-indigo-950">
           {message.emoji} {message.text}
         </h1>
         <div className="mt-4">
@@ -566,7 +700,7 @@ function Results(props: {
             {props.award.leveledUpTo && (
               <div className="rounded-2xl bg-gradient-to-br from-amber-100 to-pink-100 p-4 flex items-center gap-3">
                 <img
-                  src={`${import.meta.env.BASE_URL}images/level-up.png`}
+                  src={img('images/level-up.png')}
                   alt=""
                   className="w-16 h-16"
                   onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
@@ -576,6 +710,29 @@ function Results(props: {
                   <div className="font-black text-lg text-indigo-950">
                     Si na leveli {props.award.leveledUpTo} 🎉
                   </div>
+                </div>
+              </div>
+            )}
+            {props.award.newRewards.length > 0 && (
+              <div className="rounded-3xl bg-gradient-to-br from-amber-200 via-pink-200 to-indigo-200 p-1">
+                <div className="bg-white rounded-[20px] p-4">
+                  <div className="text-[11px] uppercase font-bold text-pink-700 tracking-widest">
+                    🎁 Nová odmena!
+                  </div>
+                  {props.award.newRewards.map((r) => (
+                    <div key={r.id} className="mt-2 text-left">
+                      <div className="flex items-center gap-3">
+                        <div className="text-4xl">{r.emoji}</div>
+                        <div className="min-w-0">
+                          <div className="font-black text-indigo-950">{r.title}</div>
+                          <div className="text-xs text-indigo-700/80">{r.desc}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 rounded-lg px-2 py-1">
+                        💌 Povedz mame alebo otcovi — odomkla si vauchera!
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -657,12 +814,274 @@ function Results(props: {
   );
 }
 
+// ====================== PROGRESS / LEVELS / REWARDS / BADGES ======================
+function ProgressScreen({ game, onBack }: { game: GameState; onBack: () => void }) {
+  const [tab, setTab] = useState<'levels' | 'rewards' | 'badges'>('levels');
+  const level = levelFromXp(game.xp);
+  const allBadges = Object.values(BADGES);
+  const unlocked = unlockedRewardIds(game);
+  const avg =
+    game.totalQuestions > 0 ? Math.round((game.totalCorrect / game.totalQuestions) * 100) : 0;
+
+  return (
+    <Container>
+      <button
+        onClick={onBack}
+        className="mb-3 inline-flex items-center gap-1 text-indigo-700 font-medium active:scale-95"
+      >
+        ← Späť
+      </button>
+
+      <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-4">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-white font-black text-2xl shadow-md">
+            {level}
+          </span>
+          <div>
+            <div className="text-sm text-indigo-700/70">Si na leveli</div>
+            <div className="text-2xl font-black text-indigo-950">{level}</div>
+            <div className="text-xs text-indigo-700/70">{game.xp} XP celkovo</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
+          <Stat label="Testy" value={`${game.totalQuizzes}`} />
+          <Stat label="Najlepšie" value={`${game.bestScore} %`} />
+          <Stat label="Priemer" value={`${avg} %`} />
+          <Stat label="Najdlhšia séria" value={`${game.bestStreak}`} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {([
+          { id: 'levels', label: 'Levely', emoji: '⭐' },
+          { id: 'rewards', label: 'Odmeny', emoji: '🎁' },
+          { id: 'badges', label: 'Odznaky', emoji: '🏅' },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`py-3 rounded-2xl font-bold transition-all ${
+              tab === t.id
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'bg-white/80 text-indigo-700 active:scale-95'
+            }`}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'levels' && <LevelsTab currentLevel={level} currentXp={game.xp} />}
+      {tab === 'rewards' && <RewardsTab unlocked={unlocked} currentLevel={level} />}
+      {tab === 'badges' && (
+        <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6">
+          <h2 className="text-base font-semibold text-indigo-950 mb-3">
+            Odznaky · {game.badges.length} / {allBadges.length}
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            {allBadges.map((b) => {
+              const earned = game.badges.includes(b.id);
+              return (
+                <div
+                  key={b.id}
+                  className={`rounded-2xl p-3 border-2 flex items-center gap-3 ${
+                    earned
+                      ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-pink-50'
+                      : 'border-indigo-100 bg-white/60 opacity-60'
+                  }`}
+                >
+                  <img
+                    src={img(b.image)}
+                    alt=""
+                    className={`w-14 h-14 shrink-0 ${earned ? '' : 'grayscale'}`}
+                    onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                  />
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-indigo-950 truncate">{b.title}</div>
+                    <div className="text-xs text-indigo-700/70">{b.desc}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Container>
+  );
+}
+
+function LevelsTab({ currentLevel, currentXp }: { currentLevel: number; currentXp: number }) {
+  const maxLevel = 20;
+  const rows = [];
+  for (let lvl = 1; lvl <= maxLevel; lvl++) {
+    const xpReq = xpForLevel(lvl);
+    const reward = REWARDS.find((r) => r.unlock.kind === 'level' && r.unlock.level === lvl);
+    const reached = currentLevel >= lvl;
+    rows.push(
+      <div
+        key={lvl}
+        className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
+          lvl === currentLevel
+            ? 'border-indigo-500 bg-indigo-50 shadow-md'
+            : reached
+            ? 'border-emerald-200 bg-emerald-50/40'
+            : 'border-indigo-100 bg-white/60'
+        }`}
+      >
+        <span
+          className={`inline-flex items-center justify-center w-10 h-10 rounded-full font-black text-sm shrink-0 ${
+            reached
+              ? 'bg-gradient-to-br from-amber-300 to-pink-500 text-white shadow'
+              : 'bg-indigo-100 text-indigo-400'
+          }`}
+        >
+          {lvl}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-indigo-950">
+            Level {lvl}
+            {lvl === currentLevel && (
+              <span className="ml-2 text-[10px] uppercase font-bold text-indigo-600">si tu</span>
+            )}
+          </div>
+          <div className="text-xs text-indigo-700/70">
+            {xpReq} XP {!reached && `(ešte ${xpReq - currentXp})`}
+          </div>
+        </div>
+        {reward ? (
+          <div className="text-right shrink-0 max-w-[55%]">
+            <div className="text-2xl">{reward.emoji}</div>
+            <div className="text-[11px] font-bold text-indigo-950 leading-tight truncate">
+              {reward.title}
+            </div>
+          </div>
+        ) : (
+          <span className="text-indigo-300 text-xs">+ XP</span>
+        )}
+      </div>,
+    );
+  }
+  return (
+    <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-3 sm:p-4">
+      <div className="text-sm text-indigo-700/80 mb-3 px-1">
+        Za každú správnu odpoveď ↑ +10 XP. Bonus za sériu (+10 / +25) a za stopercentný test (+50).
+      </div>
+      <div className="space-y-2">{rows}</div>
+    </div>
+  );
+}
+
+function RewardsTab({
+  unlocked,
+  currentLevel,
+}: {
+  unlocked: Set<RewardId>;
+  currentLevel: number;
+}) {
+  const main = REWARDS.filter((r) => !r.isEgg);
+  const eggs = REWARDS.filter((r) => r.isEgg);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-3 sm:p-4">
+        <h2 className="text-base font-semibold text-indigo-950 px-1 mb-2">
+          Odmeny · {[...unlocked].filter((id) => !REWARDS.find((r) => r.id === id)?.isEgg).length} /{' '}
+          {main.length}
+        </h2>
+        <div className="space-y-2">
+          {main.map((r) => {
+            const isUnlocked = unlocked.has(r.id);
+            const lvl = (r.unlock as any).level as number;
+            return (
+              <div
+                key={r.id}
+                className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
+                  isUnlocked
+                    ? 'border-amber-300 bg-gradient-to-r from-amber-50 to-pink-50'
+                    : 'border-indigo-100 bg-white/60'
+                }`}
+              >
+                <div className={`text-3xl shrink-0 ${isUnlocked ? '' : 'grayscale opacity-50'}`}>
+                  {r.emoji}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] uppercase font-bold tracking-wide text-indigo-600">
+                    Level {lvl}
+                    {isUnlocked && (
+                      <span className="ml-2 text-emerald-600">✓ odomknuté</span>
+                    )}
+                  </div>
+                  <div
+                    className={`font-bold text-sm truncate ${
+                      isUnlocked ? 'text-indigo-950' : 'text-indigo-400'
+                    }`}
+                  >
+                    {r.title}
+                  </div>
+                  <div
+                    className={`text-xs ${
+                      isUnlocked ? 'text-indigo-700/80' : 'text-indigo-400'
+                    }`}
+                  >
+                    {r.desc}
+                  </div>
+                </div>
+                {!isUnlocked && lvl - currentLevel > 0 && (
+                  <div className="text-[11px] text-indigo-400 shrink-0">
+                    +{lvl - currentLevel} lvl
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-br from-fuchsia-50 to-indigo-50 rounded-3xl shadow-md p-3 sm:p-4">
+        <h2 className="text-base font-semibold text-indigo-950 px-1 mb-2">
+          ✨ Tajné odmeny ({[...unlocked].filter((id) => REWARDS.find((r) => r.id === id)?.isEgg).length} / {eggs.length})
+        </h2>
+        <div className="space-y-2">
+          {eggs.map((r) => {
+            const isUnlocked = unlocked.has(r.id);
+            return (
+              <div
+                key={r.id}
+                className={`flex items-center gap-3 p-3 rounded-2xl border-2 ${
+                  isUnlocked
+                    ? 'border-fuchsia-300 bg-white'
+                    : 'border-indigo-100 bg-white/60'
+                }`}
+              >
+                <div className="text-3xl shrink-0">{isUnlocked ? r.emoji : '❓'}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] uppercase font-bold tracking-wide text-fuchsia-600">
+                    Tajná odmena
+                  </div>
+                  <div className="font-bold text-sm text-indigo-950">
+                    {isUnlocked ? r.title : '???'}
+                  </div>
+                  <div className="text-xs text-indigo-700/70">
+                    {isUnlocked
+                      ? r.desc
+                      : `Tip: ${(r.unlock as any).label}`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BadgeChip({ id }: { id: BadgeId }) {
   const b = BADGES[id];
   return (
     <div className="bg-white rounded-2xl p-2 shadow-sm flex items-center gap-2 max-w-full">
       <img
-        src={`${import.meta.env.BASE_URL}${b.image.replace(/^\//, '')}`}
+        src={img(b.image)}
         alt=""
         className="w-10 h-10 shrink-0"
         onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
@@ -672,64 +1091,6 @@ function BadgeChip({ id }: { id: BadgeId }) {
         <div className="text-[10px] text-indigo-700/70 truncate">{b.desc}</div>
       </div>
     </div>
-  );
-}
-
-function BadgesScreen({ game, onBack }: { game: GameState; onBack: () => void }) {
-  const all = Object.values(BADGES);
-  const avg =
-    game.totalQuestions > 0
-      ? Math.round((game.totalCorrect / game.totalQuestions) * 100)
-      : 0;
-  return (
-    <Container>
-      <button
-        onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1 text-indigo-700 font-medium active:scale-95"
-      >
-        ← Späť
-      </button>
-      <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-indigo-950 mb-3">Tvoj postup</h1>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-          <Stat label="Testy" value={`${game.totalQuizzes}`} />
-          <Stat label="Najlepšie skóre" value={`${game.bestScore} %`} />
-          <Stat label="Priemer" value={`${avg} %`} />
-          <Stat label="Najdlhšia séria" value={`${game.bestStreak}`} />
-        </div>
-      </div>
-      <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6">
-        <h2 className="text-lg font-semibold text-indigo-950 mb-3">
-          Odznaky ({game.badges.length} / {all.length})
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          {all.map((b) => {
-            const earned = game.badges.includes(b.id);
-            return (
-              <div
-                key={b.id}
-                className={`rounded-2xl p-3 border-2 flex items-center gap-3 ${
-                  earned
-                    ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-pink-50'
-                    : 'border-indigo-100 bg-white/60 opacity-60'
-                }`}
-              >
-                <img
-                  src={`${import.meta.env.BASE_URL}${b.image.replace(/^\//, '')}`}
-                  alt=""
-                  className={`w-14 h-14 shrink-0 ${earned ? '' : 'grayscale'}`}
-                  onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-                />
-                <div className="min-w-0">
-                  <div className="font-bold text-sm text-indigo-950 truncate">{b.title}</div>
-                  <div className="text-xs text-indigo-700/70">{b.desc}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </Container>
   );
 }
 
