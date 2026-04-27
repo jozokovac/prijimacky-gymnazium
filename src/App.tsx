@@ -74,6 +74,33 @@ function gen(g: 'girl' | 'boy' | null | undefined, fem: string, masc: string): s
   return g === 'boy' ? masc : fem;
 }
 
+function UpdateBanner() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const fn = () => setShow(true);
+    window.addEventListener('pwa-update-available', fn);
+    return () => window.removeEventListener('pwa-update-available', fn);
+  }, []);
+  if (!show) return null;
+  return (
+    <div className="fixed top-2 left-2 right-2 z-50 mx-auto max-w-md rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-3 shadow-xl flex items-center gap-3 animate-pulse">
+      <div className="text-2xl shrink-0">🎁</div>
+      <div className="flex-1 text-sm">
+        <div className="font-bold">Nová verzia je tu!</div>
+        <div className="text-[11px] text-white/85">Klikni Obnoviť — progres ostáva.</div>
+      </div>
+      <button
+        onClick={() => {
+          (window as unknown as { __pwaUpdate?: () => void }).__pwaUpdate?.();
+        }}
+        className="px-3 py-1.5 rounded-xl bg-white text-emerald-700 font-bold text-sm shrink-0 active:scale-95"
+      >
+        Obnoviť
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [game, setGame] = useState<GameState>(() => migrateOldStats(loadGame()));
   const [phase, setPhase] = useState<Phase>('home');
@@ -323,21 +350,17 @@ export default function App() {
     }
   }
 
-  // Onboarding
+  let screen: React.ReactNode;
   if (!game.name || !game.gender) {
-    return (
+    screen = (
       <Onboarding
         onSubmit={(name, gender) => setGame((g) => ({ ...g, name, gender }))}
       />
     );
-  }
-
-  if (phase === 'progress') {
-    return <ProgressScreen game={game} onBack={() => setPhase('home')} />;
-  }
-
-  if (phase === 'home') {
-    return (
+  } else if (phase === 'progress') {
+    screen = <ProgressScreen game={game} onBack={() => setPhase('home')} />;
+  } else if (phase === 'home') {
+    screen = (
       <Home
         subject={subject}
         setSubject={setSubject}
@@ -349,10 +372,8 @@ export default function App() {
         game={game}
       />
     );
-  }
-
-  if (phase === 'review') {
-    return (
+  } else if (phase === 'review') {
+    screen = (
       <ReviewScreen
         answers={answers}
         onChange={changeAnswer}
@@ -361,10 +382,8 @@ export default function App() {
         secondsLimit={MODES[mode].secondsPerQ * questions.length}
       />
     );
-  }
-
-  if (phase === 'results') {
-    return (
+  } else if (phase === 'results') {
+    screen = (
       <Results
         answers={answers}
         elapsed={elapsedStr}
@@ -376,27 +395,34 @@ export default function App() {
         }}
       />
     );
+  } else {
+    const q = questions[order[slot]];
+    screen = (
+      <Quiz
+        q={q}
+        index={slot}
+        total={order.length}
+        given={given}
+        setGiven={setGiven}
+        reveal={reveal}
+        submit={submit}
+        next={next}
+        onSkip={mode === 'big' ? skipCurrent : null}
+        canSkip={mode === 'big' && !skippedOnce.has(order[slot])}
+        mode={mode}
+        elapsed={elapsed}
+        elapsedStr={elapsedStr}
+        streak={streak}
+        name={game.name}
+      />
+    );
   }
 
-  const q = questions[order[slot]];
   return (
-    <Quiz
-      q={q}
-      index={slot}
-      total={order.length}
-      given={given}
-      setGiven={setGiven}
-      reveal={reveal}
-      submit={submit}
-      next={next}
-      onSkip={mode === 'big' ? skipCurrent : null}
-      canSkip={mode === 'big' && !skippedOnce.has(order[slot])}
-      mode={mode}
-      elapsed={elapsed}
-      elapsedStr={elapsedStr}
-      streak={streak}
-      name={game.name}
-    />
+    <>
+      <UpdateBanner />
+      {screen}
+    </>
   );
 }
 
