@@ -28,15 +28,23 @@ import {
 import { examCountdownLabel, motivationalLine, daysUntilExam, daysUntilSecondRound } from './exam';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
-type Phase = 'home' | 'quiz' | 'results' | 'progress';
+type Phase = 'home' | 'quiz' | 'review' | 'results' | 'progress';
 type Mode = 'small' | 'medium' | 'big';
 
-// Real prijímačky tempo: SJL 60 min / 35 otázok (~103 sek/q), Matematika 60 min /
-// 20 otázok (180 sek/q). Priemer 140 sek/q. Big mode = simulácia.
-const MODES: Record<Mode, { count: number; label: string; emoji: string; desc: string; secondsPerQ: number }> = {
-  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: '5 otázok · zahriatie',                       secondsPerQ: 0 },
-  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '10 otázok · bežný tréning',                   secondsPerQ: 0 },
-  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '20 otázok · 47 min · ako reálne prijímačky', secondsPerQ: 140 },
+// Tempo 2 min/otázka (= dvojnásobok rýchleho 1 min/q). Eli má dosť času na
+// rozmyslenie + zostane jej čas na review. Reálne prijímačky majú SJL 103 s/q
+// a Matematiku 180 s/q (priemer 140) — naše 120 s/q je medzi tým = realistické,
+// ale s polštárom času na úspech.
+//
+// `defer` = neukazuj odpoveď hneď, ale až na konci po review (učí návyk
+// kontrolovať si odpovede pred odovzdaním).
+const MODES: Record<
+  Mode,
+  { count: number; label: string; emoji: string; desc: string; secondsPerQ: number; defer: boolean }
+> = {
+  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: 'Učenie · odpoveď hneď',  secondsPerQ: 0,   defer: false },
+  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '20 min · ako test',       secondsPerQ: 120, defer: true  },
+  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '40 min · ako prijímačky', secondsPerQ: 120, defer: true  },
 };
 
 type Answer = { question: Question; given: string; correct: boolean; originalIndex: number };
@@ -131,8 +139,16 @@ export default function App() {
     const q = questions[idx];
     if (!given.trim()) return;
     const ok = isCorrect(q, given);
+    const newAnswer: Answer = { question: q, given, correct: ok, originalIndex: idx };
+    setAnswers((a) => [...a, newAnswer]);
+
+    if (MODES[mode].defer) {
+      // Žiadny okamžitý feedback — pokračuj na ďalšiu, alebo choď na review
+      advanceOrReview();
+      return;
+    }
+
     setReveal({ correct: ok });
-    setAnswers((a) => [...a, { question: q, given, correct: ok, originalIndex: idx }]);
     setGame((g) => updateQuestionStat(g, q.id, ok));
     if (ok) {
       const newStreak = streak + 1;
@@ -151,69 +167,120 @@ export default function App() {
     }
   }
 
+  function advanceOrReview() {
+    if (slot + 1 >= order.length) {
+      setPhase('review');
+    } else {
+      setSlot((s) => s + 1);
+      setGiven('');
+      setReveal(null);
+    }
+  }
+
+  function changeAnswer(answerIndex: number, newGiven: string) {
+    setAnswers((arr) => {
+      const next = [...arr];
+      const a = next[answerIndex];
+      next[answerIndex] = {
+        ...a,
+        given: newGiven,
+        correct: isCorrect(a.question, newGiven),
+      };
+      return next;
+    });
+  }
+
+  function finalSubmit() {
+    // Compute final stats from answers (deferred path)
+    let bestStreak = 0;
+    let curStreak = 0;
+    for (const a of answers) {
+      if (a.correct) {
+        curStreak++;
+        bestStreak = Math.max(bestStreak, curStreak);
+      } else {
+        curStreak = 0;
+      }
+    }
+    setBestStreakInQuiz(bestStreak);
+
+    // Update questionStats based on final answers
+    setGame((g) => {
+      let next = g;
+      for (const a of answers) {
+        next = updateQuestionStat(next, a.question.id, a.correct);
+      }
+      return next;
+    });
+
+    // Use timeout so the setGame above settles before next() reads `game`
+    setTimeout(() => finalize(bestStreak), 0);
+  }
+
+  function finalize(bestStreak: number) {
+    const correct = answers.filter((a) => a.correct).length;
+    const mathCorrect = answers.filter((a) => a.correct && a.question.subject === 'matematika').length;
+    const slovakCorrect = answers.filter((a) => a.correct && a.question.subject === 'slovencina').length;
+
+    // Re-read freshest game state
+    const before = loadGame();
+    const result = awardForQuiz(before, {
+      total: questions.length,
+      correct,
+      bestStreakInQuiz: bestStreak,
+      mathCorrect,
+      slovakCorrect,
+    });
+
+    const seen = readSeenRewards();
+    const beforeIds = unlockedRewardIds(before);
+    const afterIds = unlockedRewardIds(result.next);
+    const newRewards: Reward[] = [];
+    for (const r of REWARDS) {
+      if (afterIds.has(r.id) && !beforeIds.has(r.id) && !seen.has(r.id)) {
+        newRewards.push(r);
+        seen.add(r.id);
+      }
+    }
+    writeSeenRewards(seen);
+
+    const oddsBefore = oddsOfAcceptance(before).pct;
+    const oddsAfter = oddsOfAcceptance(result.next).pct;
+    setGame(result.next);
+    setAward({
+      xpGained: result.xpGained,
+      newBadges: result.newBadges,
+      leveledUpTo: result.leveledUpTo,
+      newRewards,
+      oddsBefore,
+      oddsAfter,
+    });
+    if (correct === questions.length) {
+      confetti({
+        particleCount: 200,
+        spread: 100,
+        origin: { y: 0.6 },
+        colors: ['#ec4899', '#a855f7', '#6366f1', '#fbbf24', '#10b981'],
+      });
+    }
+    if (newRewards.length > 0) {
+      setTimeout(
+        () =>
+          confetti({
+            particleCount: 250,
+            spread: 120,
+            origin: { y: 0.4 },
+            colors: ['#fbbf24', '#f59e0b', '#ec4899', '#a855f7'],
+          }),
+        400,
+      );
+    }
+    setPhase('results');
+  }
+
   function next() {
     if (slot + 1 >= order.length) {
-      const correct = answers.filter((a) => a.correct).length;
-      const mathCorrect = answers.filter(
-        (a) => a.correct && a.question.subject === 'matematika',
-      ).length;
-      const slovakCorrect = answers.filter(
-        (a) => a.correct && a.question.subject === 'slovencina',
-      ).length;
-
-      const before = game;
-      const result = awardForQuiz(before, {
-        total: questions.length,
-        correct,
-        bestStreakInQuiz,
-        mathCorrect,
-        slovakCorrect,
-      });
-
-      const seen = readSeenRewards();
-      const beforeIds = unlockedRewardIds(before);
-      const afterIds = unlockedRewardIds(result.next);
-      const newRewards: Reward[] = [];
-      for (const r of REWARDS) {
-        if (afterIds.has(r.id) && !beforeIds.has(r.id) && !seen.has(r.id)) {
-          newRewards.push(r);
-          seen.add(r.id);
-        }
-      }
-      writeSeenRewards(seen);
-
-      const oddsBefore = oddsOfAcceptance(before).pct;
-      const oddsAfter = oddsOfAcceptance(result.next).pct;
-      setGame(result.next);
-      setAward({
-        xpGained: result.xpGained,
-        newBadges: result.newBadges,
-        leveledUpTo: result.leveledUpTo,
-        newRewards,
-        oddsBefore,
-        oddsAfter,
-      });
-      if (correct === questions.length) {
-        confetti({
-          particleCount: 200,
-          spread: 100,
-          origin: { y: 0.6 },
-          colors: ['#ec4899', '#a855f7', '#6366f1', '#fbbf24', '#10b981'],
-        });
-      }
-      if (newRewards.length > 0) {
-        setTimeout(
-          () =>
-            confetti({
-              particleCount: 250,
-              spread: 120,
-              origin: { y: 0.4 },
-              colors: ['#fbbf24', '#f59e0b', '#ec4899', '#a855f7'],
-            }),
-          400,
-        );
-      }
-      setPhase('results');
+      finalize(bestStreakInQuiz);
     } else {
       setSlot((s) => s + 1);
       setGiven('');
@@ -245,6 +312,18 @@ export default function App() {
         onStartReview={() => startQuiz({ reviewOnly: true })}
         onShowProgress={() => setPhase('progress')}
         game={game}
+      />
+    );
+  }
+
+  if (phase === 'review') {
+    return (
+      <ReviewScreen
+        answers={answers}
+        onChange={changeAnswer}
+        onSubmit={finalSubmit}
+        elapsed={elapsed}
+        secondsLimit={MODES[mode].secondsPerQ * questions.length}
       />
     );
   }
@@ -568,10 +647,11 @@ function Home(props: {
             );
           })}
         </div>
-        {props.mode === 'big' && (
-          <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 rounded-xl px-3 py-2 leading-relaxed">
-            🎓 Dry run: {Math.round((MODES.big.secondsPerQ * MODES.big.count) / 60)} min časomiera ako reálne
-            prijímačky (SJL 60 min/35q, Mat 60 min/20q). Môžeš preskočiť otázku a vrátiť sa k nej na konci.
+        {(props.mode === 'big' || props.mode === 'medium') && (
+          <div className="mt-2 text-[11px] text-indigo-700/80 bg-indigo-50 rounded-xl px-3 py-2 leading-relaxed">
+            ⏳ Časomiera: {Math.round((MODES[props.mode].secondsPerQ * MODES[props.mode].count) / 60)} min
+            ({MODES[props.mode].secondsPerQ}s/otázka). Odpovede uvidíš až na konci — máš čas si ich
+            pred odovzdaním skontrolovať. {props.mode === 'big' && 'Môžeš preskočiť otázku a vrátiť sa.'}
           </div>
         )}
 
@@ -641,6 +721,7 @@ function Quiz(props: {
   name: string;
 }) {
   const { q, index, total, given, setGiven, reveal, submit, next, onSkip, canSkip, mode, elapsed, elapsedStr, streak, name } = props;
+  const defer = MODES[mode].defer;
   const totalLimit = MODES[mode].secondsPerQ * total; // 0 = no limit
   const remainingSec = totalLimit > 0 ? Math.max(0, totalLimit - elapsed) : 0;
   const remainingStr = `${String(Math.floor(remainingSec / 60)).padStart(2, '0')}:${String(
@@ -769,7 +850,7 @@ function Quiz(props: {
           />
         )}
 
-        {reveal && (
+        {reveal && !defer && (
           <div
             className={`mt-4 rounded-2xl p-4 flex gap-3 ${
               reveal.correct
@@ -804,7 +885,7 @@ function Quiz(props: {
       </div>
 
       <div className="sticky bottom-3 mt-4">
-        {!reveal ? (
+        {(!reveal || defer) ? (
           <div className="flex gap-2">
             {onSkip && canSkip && (
               <button
@@ -820,7 +901,11 @@ function Quiz(props: {
               disabled={!given.trim()}
               className="flex-1 px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-lg shadow-lg shadow-indigo-400/30 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
             >
-              Odpovedať
+              {defer
+                ? index + 1 >= total
+                  ? 'Skontrolovať odpovede →'
+                  : 'Ďalšia →'
+                : 'Odpovedať'}
             </button>
           </div>
         ) : (
@@ -831,6 +916,163 @@ function Quiz(props: {
             {index + 1 >= total ? 'Vidieť výsledky →' : 'Ďalšia otázka →'}
           </button>
         )}
+      </div>
+    </Container>
+  );
+}
+
+// ====================== REVIEW (pred-submit kontrola) ======================
+function ReviewScreen(props: {
+  answers: Answer[];
+  onChange: (idx: number, given: string) => void;
+  onSubmit: () => void;
+  elapsed: number;
+  secondsLimit: number;
+}) {
+  const remaining = Math.max(0, props.secondsLimit - props.elapsed);
+  const remStr = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+
+  const filled = props.answers.filter((a) => a.given.trim() !== '').length;
+  const total = props.answers.length;
+
+  // Auto-submit on time-out
+  useEffect(() => {
+    if (props.secondsLimit > 0 && remaining <= 0) {
+      props.onSubmit();
+    }
+  }, [remaining, props.secondsLimit]);
+
+  return (
+    <Container>
+      <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="text-3xl shrink-0">📝</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase font-bold tracking-widest text-indigo-700/70">
+              Skontroluj a odovzdaj
+            </div>
+            <h1 className="text-xl font-black text-indigo-950 leading-tight">
+              {filled}/{total} zodpovedaných
+            </h1>
+          </div>
+          {props.secondsLimit > 0 && (
+            <div className="text-right shrink-0">
+              <div className={`font-mono font-black text-lg ${remaining < 60 ? 'text-rose-600 animate-pulse' : 'text-indigo-700'}`}>
+                ⏳ {remStr}
+              </div>
+              <div className="text-[10px] uppercase tracking-wide text-indigo-600/70">
+                ostáva
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="text-xs text-indigo-700/80 leading-relaxed bg-indigo-50 rounded-xl p-3">
+          💡 Máš ešte čas — preklikaj si odpovede, oprav si ich, ak treba. Odpovedať
+          napamäť je dobré, skontrolovať to ešte raz je lepšie. Klikni na otázku pre úpravu.
+        </div>
+      </div>
+
+      <div className="space-y-2 mb-4">
+        {props.answers.map((a, i) => {
+          const isEditing = editingIdx === i;
+          const empty = !a.given.trim();
+          return (
+            <div
+              key={i}
+              className={`rounded-2xl border-2 transition-all ${
+                empty
+                  ? 'border-rose-200 bg-rose-50/40'
+                  : isEditing
+                  ? 'border-indigo-500 bg-indigo-50 shadow-md'
+                  : 'border-indigo-100 bg-white'
+              }`}
+            >
+              <button
+                onClick={() => setEditingIdx(isEditing ? null : i)}
+                className="w-full text-left p-3 sm:p-4 flex items-start gap-3"
+              >
+                <span
+                  className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm ${
+                    empty
+                      ? 'bg-rose-300 text-white'
+                      : 'bg-indigo-200 text-indigo-800'
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] uppercase font-bold tracking-wide text-indigo-700/60">
+                    {a.question.subject === 'matematika' ? '🔢 Matematika' : '📚 Slovenčina'} ·{' '}
+                    {a.question.topic}
+                  </div>
+                  <div className="text-sm text-indigo-950 font-medium line-clamp-2">
+                    {a.question.prompt}
+                  </div>
+                  <div className="mt-1 text-sm">
+                    <span className="text-indigo-700/60">Tvoja odpoveď: </span>
+                    {empty ? (
+                      <span className="text-rose-600 font-semibold">— neodpovedané</span>
+                    ) : a.question.type === 'choice' ? (
+                      <span className="font-semibold text-indigo-950">
+                        {a.question.choices?.find((c) => c.id === a.given)?.text || a.given}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-indigo-950">{a.given}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-indigo-400 text-xl shrink-0">{isEditing ? '×' : '✎'}</div>
+              </button>
+              {isEditing && (
+                <div className="px-3 pb-3 sm:px-4 sm:pb-4 border-t border-indigo-100 pt-3">
+                  {a.question.type === 'choice' && a.question.choices ? (
+                    <div className="space-y-2">
+                      {a.question.choices.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            props.onChange(i, c.id);
+                            setEditingIdx(null);
+                          }}
+                          className={`w-full text-left px-4 py-3 rounded-xl border-2 flex items-center gap-3 ${
+                            a.given === c.id
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : 'border-indigo-100 bg-white active:scale-[0.99]'
+                          }`}
+                        >
+                          <span className="font-bold text-indigo-700 uppercase shrink-0 w-6">
+                            {c.id})
+                          </span>
+                          <span className="text-indigo-950">{c.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      autoFocus
+                      defaultValue={a.given}
+                      onChange={(e) => props.onChange(i, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setEditingIdx(null);
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-indigo-200 bg-white text-indigo-950 focus:border-indigo-500 focus:outline-none"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="sticky bottom-3">
+        <button
+          onClick={props.onSubmit}
+          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg shadow-emerald-300/40 active:scale-[0.98] transition-all"
+        >
+          ✓ Odovzdať odpovede
+        </button>
       </div>
     </Container>
   );
