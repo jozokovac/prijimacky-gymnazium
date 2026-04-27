@@ -268,19 +268,26 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
   const [name, setName] = useState('');
   return (
     <Container>
-      <div className="text-center pt-6">
+      <div className="text-center pt-4 sm:pt-6">
         <Mascot className="w-32 h-32 sm:w-40 sm:h-40 mx-auto" />
         <div className="text-xs uppercase font-bold tracking-widest text-pink-600 mt-2">
           Mini Genius akadémia
         </div>
-        <h1 className="text-3xl sm:text-4xl font-black text-indigo-950 mt-1 leading-tight">
-          Vitaj v akadémii!
+        <h1 className="text-2xl sm:text-3xl font-black text-indigo-950 mt-1 leading-tight">
+          Pomôžem ti dostať sa
+          <br />
+          na 8-ročné gymnázium 🎓
         </h1>
-        <p className="text-indigo-700/80 mt-3">
-          Som tvoja sovička-tútorka. Ako sa voláš?
+        <p className="text-indigo-800/85 mt-3 text-base leading-relaxed px-1">
+          Si šikovná a ja viem, že to zvládneš. 💪
+          <br />
+          Krok za krokom — a po pár týždňoch budeš na prijímačkách žiariť.
         </p>
       </div>
-      <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-5 sm:p-6 mt-6">
+      <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-5 sm:p-6 mt-5">
+        <label className="block text-sm font-semibold text-indigo-900 mb-2">
+          Ako sa voláš? 🌸
+        </label>
         <input
           autoFocus
           value={name}
@@ -297,11 +304,13 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
           onClick={() => onSubmit(name.trim())}
           className="w-full mt-4 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-indigo-500 text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
         >
-          Začnime ✨
+          {name.trim() ? `Poďme na to, ${name.trim()}! ✨` : 'Začnime ✨'}
         </button>
       </div>
-      <p className="text-center text-xs text-indigo-700/60 mt-6">
-        Ukáž svoj talent · Trénuj prijímačky · Odomykaj odmeny
+      <p className="text-center text-xs text-indigo-700/70 mt-5 px-3 leading-relaxed">
+        Slovenčina + matematika · krátke testy · kedykoľvek na mobile
+        <br />
+        Každá správna odpoveď ťa posunie bližšie k cieľu 🌟
       </p>
     </Container>
   );
@@ -368,10 +377,13 @@ function Home(props: {
   const next = nextRewardForLevel(level);
   const xpToNext = next && next.unlock.kind === 'level' ? xpForLevel(next.unlock.level) - props.game.xp : 0;
   const greeting = props.game.totalQuizzes === 0
-    ? `Ahoj ${props.game.name}! 🌟`
+    ? `Pripravená, ${props.game.name}? 🌟`
     : props.game.dailyStreak >= 2
     ? `Vitaj späť, ${props.game.name}! 🔥`
     : `Ahoj ${props.game.name}!`;
+  const subline = props.game.totalQuizzes === 0
+    ? 'Začnime tvoju cestu na 8-ročné gymnázium 🎓'
+    : 'Každý deň ťa posúva bližšie k prijímačkám 💪';
 
   return (
     <Container>
@@ -383,9 +395,7 @@ function Home(props: {
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-indigo-950 leading-tight mt-0.5">
           {greeting}
         </h1>
-        <p className="mt-1 text-sm text-indigo-700/80">
-          Ukáž svoj talent · Zvládni prijímačky 🎓
-        </p>
+        <p className="mt-1 text-sm text-indigo-700/80">{subline}</p>
       </header>
 
       <div className="mb-3">
