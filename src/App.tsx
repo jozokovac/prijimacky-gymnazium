@@ -25,6 +25,16 @@ import {
   writeSeenRewards,
 } from './rewards';
 import { motivationalLine, daysUntilExam, examCountdownLabel } from './exam';
+import {
+  playCorrect,
+  playWrong,
+  playStreak,
+  playLevelUp,
+  playReward,
+  playPerfect,
+  isSoundEnabled,
+  setSoundEnabled,
+} from './sounds';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'review' | 'results' | 'progress';
@@ -173,15 +183,19 @@ export default function App() {
       setStreak(newStreak);
       setBestStreakInQuiz((b) => Math.max(b, newStreak));
       if (newStreak === 3 || newStreak === 5 || newStreak >= 10) {
+        playStreak();
         confetti({
           particleCount: 40,
           spread: 60,
           origin: { y: 0.4 },
           colors: ['#ec4899', '#a855f7', '#6366f1', '#fbbf24'],
         });
+      } else {
+        playCorrect();
       }
     } else {
       setStreak(0);
+      playWrong();
     }
   }
 
@@ -274,6 +288,7 @@ export default function App() {
       oddsAfter,
     });
     if (correct === questions.length) {
+      playPerfect();
       confetti({
         particleCount: 200,
         spread: 100,
@@ -281,17 +296,19 @@ export default function App() {
         colors: ['#ec4899', '#a855f7', '#6366f1', '#fbbf24', '#10b981'],
       });
     }
+    if (result.leveledUpTo) {
+      setTimeout(() => playLevelUp(), 250);
+    }
     if (newRewards.length > 0) {
-      setTimeout(
-        () =>
-          confetti({
-            particleCount: 250,
-            spread: 120,
-            origin: { y: 0.4 },
-            colors: ['#fbbf24', '#f59e0b', '#ec4899', '#a855f7'],
-          }),
-        400,
-      );
+      setTimeout(() => {
+        playReward();
+        confetti({
+          particleCount: 250,
+          spread: 120,
+          origin: { y: 0.4 },
+          colors: ['#fbbf24', '#f59e0b', '#ec4899', '#a855f7'],
+        });
+      }, 400);
     }
     setPhase('results');
   }
@@ -420,6 +437,7 @@ function Mascot({
 function Onboarding({ onSubmit }: { onSubmit: (name: string, gender: 'girl' | 'boy') => void }) {
   const [name, setName] = useState('');
   const [gender, setGender] = useState<'girl' | 'boy' | null>(null);
+  const [sound, setSound] = useState(isSoundEnabled());
 
   // Live preview of theme while choosing
   useEffect(() => {
@@ -490,6 +508,17 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string, gender: 'girl' | 'b
           className="w-full mt-4 py-4 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] via-[var(--grad-via)] to-[var(--grad-to)] text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
         >
           {name.trim() && gender ? `Poďme na to, ${name.trim()}! ✨` : 'Začnime ✨'}
+        </button>
+
+        <button
+          onClick={() => {
+            const next = !sound;
+            setSound(next);
+            setSoundEnabled(next);
+          }}
+          className="w-full mt-3 py-2.5 rounded-xl bg-white border-2 border-indigo-100 text-indigo-700 text-sm font-medium active:scale-[0.99] transition-all"
+        >
+          {sound ? '🔊 Zvuky zapnuté' : '🔇 Zvuky vypnuté'}
         </button>
       </div>
       <p className="text-center text-xs text-indigo-700/70 mt-5 px-3 leading-relaxed">
@@ -1219,6 +1248,7 @@ function Results(props: {
 // ====================== PROGRESS / LEVELS / REWARDS / BADGES ======================
 function ProgressScreen({ game, onBack }: { game: GameState; onBack: () => void }) {
   const [tab, setTab] = useState<'levels' | 'rewards' | 'badges'>('levels');
+  const [sound, setSound] = useState(isSoundEnabled());
   const level = levelFromXp(game.xp);
   const allBadges = Object.values(BADGES);
   const unlocked = unlockedRewardIds(game);
@@ -1227,12 +1257,24 @@ function ProgressScreen({ game, onBack }: { game: GameState; onBack: () => void 
 
   return (
     <Container>
-      <button
-        onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1 text-indigo-700 font-medium active:scale-95"
-      >
-        ← Späť
-      </button>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-indigo-700 font-medium active:scale-95"
+        >
+          ← Späť
+        </button>
+        <button
+          onClick={() => {
+            const next = !sound;
+            setSound(next);
+            setSoundEnabled(next);
+          }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border-2 border-indigo-100 text-indigo-700 text-xs font-medium active:scale-95"
+        >
+          {sound ? '🔊 Zvuky' : '🔇 Zvuky'}
+        </button>
+      </div>
 
       <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-4 sm:p-6 mb-4">
         <div className="flex items-center gap-3">
