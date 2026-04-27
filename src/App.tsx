@@ -42,9 +42,9 @@ const MODES: Record<
   Mode,
   { count: number; label: string; emoji: string; desc: string; secondsPerQ: number; defer: boolean }
 > = {
-  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: 'Učenie · odpoveď hneď',  secondsPerQ: 0,   defer: false },
-  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '20 min · ako test',       secondsPerQ: 120, defer: true  },
-  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '40 min · ako prijímačky', secondsPerQ: 120, defer: true  },
+  small:  { count: 5,  label: 'Tréning',    emoji: '🌸', desc: 'Učenie · odpoveď hneď',  secondsPerQ: 0,   defer: false },
+  medium: { count: 10, label: 'Malý test',  emoji: '⚡', desc: '20 min · ako test',       secondsPerQ: 120, defer: true  },
+  big:    { count: 20, label: 'Veľký test', emoji: '🎓', desc: '40 min · ako prijímačky', secondsPerQ: 120, defer: true  },
 };
 
 type Answer = { question: Question; given: string; correct: boolean; originalIndex: number };
@@ -616,7 +616,7 @@ function Home(props: {
         </div>
 
         <h2 className="text-base sm:text-lg font-semibold text-indigo-950 mt-5 mb-2">
-          Veľkosť tréningu
+          Vyber režim
         </h2>
         <div className="grid grid-cols-3 gap-2">
           {(['small', 'medium', 'big'] as Mode[]).map((m) => {
@@ -758,7 +758,10 @@ function Quiz(props: {
         <span>
           {index + 1} / {total}
           {mode === 'big' && (
-            <span className="ml-2 text-[10px] uppercase font-bold text-rose-600">Dry run</span>
+            <span className="ml-2 text-[10px] uppercase font-bold text-rose-600">Veľký test</span>
+          )}
+          {mode === 'medium' && (
+            <span className="ml-2 text-[10px] uppercase font-bold text-indigo-600">Malý test</span>
           )}
         </span>
         <div className="flex items-center gap-3">
