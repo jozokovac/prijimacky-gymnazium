@@ -101,6 +101,8 @@ export type GameState = {
   // denná séria
   lastPlayedDate: string | null; // YYYY-MM-DD
   dailyStreak: number;
+  // posledných 10 testov (% skóre) — pre trend
+  recentScores: number[];
 };
 
 const KEY = 'prijimacky-game-v1';
@@ -125,6 +127,7 @@ export function loadGame(): GameState {
     badges: [],
     lastPlayedDate: null,
     dailyStreak: 0,
+    recentScores: [],
   };
 }
 
@@ -202,6 +205,8 @@ export function awardForQuiz(prev: GameState, summary: {
   }
 
   const newPerfectStreak = perfect ? prev.perfectStreak + 1 : 0;
+  const scorePct = Math.round((summary.correct / summary.total) * 100);
+  const newRecent = [...(prev.recentScores ?? []), scorePct].slice(-10);
 
   const next: GameState = {
     ...prev,
@@ -217,6 +222,7 @@ export function awardForQuiz(prev: GameState, summary: {
     badges: [...prev.badges],
     lastPlayedDate: today,
     dailyStreak,
+    recentScores: newRecent,
   };
 
   const newBadges: BadgeId[] = [];
@@ -243,6 +249,74 @@ export function awardForQuiz(prev: GameState, summary: {
   const leveledUpTo = newLevel > prevLevel ? newLevel : null;
 
   return { next, xpGained, newBadges, leveledUpTo, newPerfectStreak };
+}
+
+// Šanca na prijatie — kalibrovaná na realitu Bratislavy.
+// Reálny prijímací pomer na top 8-ročné gymnáziá v BA (Gamča, Jur Hronec,
+// Metodova, PaBa, L. Sáru…) je ~10–15 % (cca 25–30 prijatých z 200–300
+// uchádzačov). Base rate = 15 %.
+//
+// Bias je miernyoptimistický — biased toward optimism (každý solídny tréning
+// posúva kandidátku NAD priemer základného poolu), ale honest: poor performance
+// znižuje odhad. Floor 12 % (nikdy nie panika), ceiling 92 % (vždy je čo zlepšiť).
+export const BASE_ACCEPTANCE_RATE = 15;
+
+export type Odds = {
+  pct: number;
+  trend: 'up' | 'flat' | 'down';
+  confidence: 'low' | 'medium' | 'high';
+};
+
+export function oddsOfAcceptance(game: GameState): Odds {
+  if (game.totalQuestions === 0) {
+    return { pct: BASE_ACCEPTANCE_RATE, trend: 'flat', confidence: 'low' };
+  }
+
+  const accuracy = game.totalCorrect / game.totalQuestions; // 0..1
+
+  // Accuracy nad 40 % posúva NAD priemer poolu, pod 40 % mierne dolu.
+  // 50 % → +11, 70 % → +33, 80 % → +44, 90 % → +55, 100 % → +66
+  // 40 % → 0, 30 % → −11, 20 % → −22 (poor)
+  const accuracyDelta = (accuracy - 0.4) * 110;
+
+  // Objem tréningu → vyššia istota (cap +12)
+  const volume = Math.min(12, Math.sqrt(game.totalQuizzes) * 3);
+
+  // Denná séria → konzistencia, ktorá pri prijímačkách rozhoduje (cap +8)
+  const streakBoost = Math.min(8, game.dailyStreak * 1.0);
+
+  // Perfect streak → kvalita pod tlakom (cap +5)
+  const perfectBoost = Math.min(5, game.perfectStreak * 1.5);
+
+  // Trend posledných 3 vs predchádzajúcich 3 testov
+  let trendDelta = 0;
+  let trend: Odds['trend'] = 'flat';
+  const rs = game.recentScores ?? [];
+  if (rs.length >= 4) {
+    const recent = rs.slice(-3);
+    const older = rs.slice(-6, -3);
+    if (older.length > 0) {
+      const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+      const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
+      trendDelta = (recentAvg - olderAvg) * 0.1;
+      if (recentAvg > olderAvg + 5) trend = 'up';
+      else if (recentAvg < olderAvg - 5) trend = 'down';
+    }
+  } else if (rs.length >= 2) {
+    const last = rs[rs.length - 1];
+    const prev = rs[rs.length - 2];
+    if (last > prev + 5) trend = 'up';
+    else if (last < prev - 5) trend = 'down';
+  }
+
+  let pct =
+    BASE_ACCEPTANCE_RATE + accuracyDelta + volume + streakBoost + perfectBoost + trendDelta;
+  pct = Math.max(12, Math.min(92, pct));
+
+  const confidence: Odds['confidence'] =
+    game.totalQuizzes >= 10 ? 'high' : game.totalQuizzes >= 3 ? 'medium' : 'low';
+
+  return { pct: Math.round(pct), trend, confidence };
 }
 
 // Migrácia zo starého kľúča prijimacky-stats-v1 (ak existuje)

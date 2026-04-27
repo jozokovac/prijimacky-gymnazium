@@ -12,6 +12,7 @@ import {
   levelProgress,
   levelFromXp,
   xpForLevel,
+  oddsOfAcceptance,
 } from './game';
 import {
   REWARDS,
@@ -41,6 +42,8 @@ type Award = {
   newBadges: BadgeId[];
   leveledUpTo: number | null;
   newRewards: Reward[];
+  oddsBefore: number;
+  oddsAfter: number;
 };
 
 const img = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -172,12 +175,16 @@ export default function App() {
       }
       writeSeenRewards(seen);
 
+      const oddsBefore = oddsOfAcceptance(before).pct;
+      const oddsAfter = oddsOfAcceptance(result.next).pct;
       setGame(result.next);
       setAward({
         xpGained: result.xpGained,
         newBadges: result.newBadges,
         leveledUpTo: result.leveledUpTo,
         newRewards,
+        oddsBefore,
+        oddsAfter,
       });
       if (correct === questions.length) {
         confetti({
@@ -475,6 +482,8 @@ function Home(props: {
       <div className="mb-3">
         <LevelBar game={props.game} onClick={props.onShowProgress} />
       </div>
+
+      <OddsCard game={props.game} />
 
       <DailyStreakBanner game={props.game} />
 
@@ -839,8 +848,23 @@ function Results(props: {
 
         {props.award && (
           <div className="mt-5 space-y-2.5">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-800 font-bold">
-              ✨ +{props.award.xpGained} XP
+            <div className="flex flex-wrap justify-center items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-800 font-bold">
+                ✨ +{props.award.xpGained} XP
+              </div>
+              {props.award.oddsAfter !== props.award.oddsBefore && (
+                <div
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-full font-bold ${
+                    props.award.oddsAfter > props.award.oddsBefore
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-rose-100 text-rose-800'
+                  }`}
+                >
+                  🎓 {props.award.oddsBefore}% →{' '}
+                  <span className="font-black">{props.award.oddsAfter}%</span>
+                  {props.award.oddsAfter > props.award.oddsBefore ? ' ↗' : ' ↘'}
+                </div>
+              )}
             </div>
             {props.award.leveledUpTo && (
               <div className="rounded-2xl bg-gradient-to-br from-amber-100 to-pink-100 p-4 flex items-center gap-3">
@@ -1258,6 +1282,72 @@ function BadgeChip({ id }: { id: BadgeId }) {
       <div className="text-left min-w-0">
         <div className="text-xs font-bold text-indigo-950 truncate">{b.title}</div>
         <div className="text-[10px] text-indigo-700/70 truncate">{b.desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function OddsCard({ game }: { game: GameState }) {
+  const odds = oddsOfAcceptance(game);
+  const color =
+    odds.pct >= 70
+      ? 'from-emerald-500 to-teal-500'
+      : odds.pct >= 50
+      ? 'from-lime-500 to-emerald-500'
+      : odds.pct >= 30
+      ? 'from-amber-500 to-orange-500'
+      : 'from-orange-500 to-rose-500';
+  const trendIcon = odds.trend === 'up' ? '↗' : odds.trend === 'down' ? '↘' : '→';
+  const trendColor =
+    odds.trend === 'up'
+      ? 'text-emerald-600'
+      : odds.trend === 'down'
+      ? 'text-rose-500'
+      : 'text-indigo-400';
+
+  const subtitle =
+    game.totalQuizzes === 0
+      ? 'Východisko ~15 % (~25 prijatých z ~250). Tréningom rastie!'
+      : odds.confidence === 'low'
+      ? 'Ešte pár testov a odhad sa upresní'
+      : odds.trend === 'up'
+      ? 'Stúpa! Pokračuj v tempe.'
+      : odds.trend === 'down'
+      ? 'Mierny pokles — zajtra to zlomíš.'
+      : 'Držíš tempo — pokračuj!';
+
+  return (
+    <div className="mb-3 bg-white/85 backdrop-blur rounded-2xl shadow-md p-3 sm:p-4 border-2 border-white">
+      <div className="flex items-center justify-between mb-2 gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase font-bold tracking-widest text-indigo-700/70">
+            Šanca na prijatie 🎓
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-3xl font-black text-indigo-950 tabular-nums">{odds.pct}%</span>
+            <span className={`text-xl font-bold ${trendColor}`}>{trendIcon}</span>
+          </div>
+        </div>
+        <div className="text-[11px] text-indigo-700/70 text-right shrink-0 max-w-[60%] leading-snug">
+          {subtitle}
+        </div>
+      </div>
+      <div className="h-3 w-full bg-indigo-100 rounded-full overflow-hidden relative">
+        {/* base-rate marker at 15% */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-indigo-400/60 z-10"
+          style={{ left: '15%' }}
+          title="Východisková šanca pre uchádzača bez tréningu"
+        />
+        <div
+          className={`h-full bg-gradient-to-r ${color} transition-all duration-700`}
+          style={{ width: `${odds.pct}%` }}
+        />
+      </div>
+      <div className="text-[9px] text-indigo-500/70 mt-1 flex justify-between">
+        <span>0 %</span>
+        <span className="ml-[12%]">↑ priemer poolu</span>
+        <span>100 %</span>
       </div>
     </div>
   );
