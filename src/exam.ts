@@ -1,10 +1,20 @@
-// Termín prijímačiek na 8-ročné gymnáziá v BA (2026): 4. mája 2026 (1. termín),
-// 11. mája 2026 (2. termín). Cielime na prvý termín.
+// Prijímačky na 8-ročné gymnáziá v Bratislave 2026:
+//   1. termín: pondelok 4. mája 2026
+//   2. termín: pondelok 11. mája 2026
+// Každá prihláška má 2 voľby (dve školy), takže reálne sú 2 šance v 1. termíne
+// + 2 šance v 2. termíne. Cielime na 1. termín.
 
-export const EXAM_DATE = new Date('2026-05-04T08:00:00+02:00');
+export const EXAM_DATE_1 = new Date('2026-05-04T08:00:00+02:00');
+export const EXAM_DATE_2 = new Date('2026-05-11T08:00:00+02:00');
+export const EXAM_DATE = EXAM_DATE_1;
 
 export function daysUntilExam(now: Date = new Date()): number {
-  const ms = EXAM_DATE.getTime() - now.getTime();
+  const ms = EXAM_DATE_1.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(ms / 86400000));
+}
+
+export function daysUntilSecondRound(now: Date = new Date()): number {
+  const ms = EXAM_DATE_2.getTime() - now.getTime();
   return Math.max(0, Math.ceil(ms / 86400000));
 }
 

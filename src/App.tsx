@@ -22,7 +22,7 @@ import {
   readSeenRewards,
   writeSeenRewards,
 } from './rewards';
-import { examCountdownLabel, motivationalLine } from './exam';
+import { examCountdownLabel, motivationalLine, daysUntilExam, daysUntilSecondRound } from './exam';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'results' | 'progress';
@@ -282,6 +282,9 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
         <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-bold text-sm">
           ⏳ {examCountdownLabel()}
         </div>
+        <div className="mt-2 text-xs text-indigo-700/80">
+          1. termín 4. máj · 2. termín 11. máj · 2 voľby na prihláške
+        </div>
         <p className="text-indigo-800/85 mt-3 text-base leading-relaxed px-1">
           Si šikovná a ja viem, že to zvládneš. 💪
           <br />
@@ -406,6 +409,9 @@ function Home(props: {
       <div className="mb-3">
         <LevelBar game={props.game} onClick={props.onShowProgress} />
       </div>
+
+      <ExamCard />
+
 
       {next && (
         <button
@@ -1104,6 +1110,39 @@ function BadgeChip({ id }: { id: BadgeId }) {
       <div className="text-left min-w-0">
         <div className="text-xs font-bold text-indigo-950 truncate">{b.title}</div>
         <div className="text-[10px] text-indigo-700/70 truncate">{b.desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function ExamCard() {
+  const d1 = daysUntilExam();
+  const d2 = daysUntilSecondRound();
+  return (
+    <div className="mb-3 rounded-2xl bg-white/80 backdrop-blur shadow-md p-3 sm:p-4 border-2 border-rose-100">
+      <div className="flex items-center gap-3">
+        <div className="text-2xl shrink-0">🎓</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase font-bold tracking-wide text-rose-700">
+            Prijímačky 2026
+          </div>
+          <div className="text-sm font-semibold text-indigo-950 leading-tight">
+            <span className="text-rose-700">1. termín · 4. máj</span> ·{' '}
+            <span className="text-indigo-700">2. termín · 11. máj</span>
+          </div>
+          <div className="text-[11px] text-indigo-700/70 mt-0.5">
+            Máš 2 voľby na prihláške — 4 šance ukázať, čo vieš ✨
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-2xl font-black text-rose-600 leading-none">{d1}</div>
+          <div className="text-[10px] uppercase tracking-wide text-rose-600/80">
+            {d1 === 1 ? 'deň' : d1 < 5 ? 'dni' : 'dní'}
+          </div>
+          {d2 > d1 && (
+            <div className="text-[10px] text-indigo-500/80 mt-0.5">+{d2 - d1} k 2. termínu</div>
+          )}
+        </div>
       </div>
     </div>
   );
