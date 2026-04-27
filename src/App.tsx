@@ -359,7 +359,7 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string, gender: 'girl' | 'b
               className={`rounded-2xl p-4 border-2 transition-all flex flex-col items-center gap-1 ${
                 gender === g.id
                   ? 'border-indigo-500 bg-indigo-50 shadow-md scale-[1.02]'
-                  : 'border-transparent bg-white active:scale-95'
+                  : 'border-indigo-200 bg-white shadow-sm hover:border-indigo-300 active:scale-95'
               }`}
             >
               <div className="text-4xl">{g.emoji}</div>
