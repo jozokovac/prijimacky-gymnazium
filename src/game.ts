@@ -103,6 +103,14 @@ export type GameState = {
   dailyStreak: number;
   // posledných 10 testov (% skóre) — pre trend
   recentScores: number[];
+  // štatistiky per otázka pre režim „Zopakuj chyby"
+  questionStats: Record<string, QStat>;
+};
+
+export type QStat = {
+  tries: number;
+  correct: number;
+  consecutiveCorrect: number; // resetuje sa pri zlej odpovedi
 };
 
 const KEY = 'prijimacky-game-v1';
@@ -128,7 +136,36 @@ export function loadGame(): GameState {
     lastPlayedDate: null,
     dailyStreak: 0,
     recentScores: [],
+    questionStats: {},
   };
+}
+
+// Zaktualizuje stats konkrétnej otázky podľa toho, či bola zodpovedaná správne.
+// Mastery = 2× správne za sebou ⇒ otázka opúšťa „review" pool.
+export function updateQuestionStat(
+  state: GameState,
+  questionId: string,
+  correct: boolean,
+): GameState {
+  const stats = state.questionStats ?? {};
+  const prev = stats[questionId] ?? { tries: 0, correct: 0, consecutiveCorrect: 0 };
+  const next: QStat = {
+    tries: prev.tries + 1,
+    correct: prev.correct + (correct ? 1 : 0),
+    consecutiveCorrect: correct ? prev.consecutiveCorrect + 1 : 0,
+  };
+  return { ...state, questionStats: { ...stats, [questionId]: next } };
+}
+
+// Vráti IDs otázok, ktoré ešte nezvládla (kedykoľvek bola zlá a od tej doby
+// menej ako 2× správne za sebou).
+export function reviewQuestionIds(state: GameState): string[] {
+  const stats = state.questionStats ?? {};
+  const out: string[] = [];
+  for (const [id, s] of Object.entries(stats)) {
+    if (s.tries > s.correct && s.consecutiveCorrect < 2) out.push(id);
+  }
+  return out;
 }
 
 export function saveGame(s: GameState) {

@@ -803,16 +803,25 @@ export const allQuestions: Question[] = [
 export function pickQuestions(
   subject: 'matematika' | 'slovencina' | 'mix',
   count: number,
+  options?: { onlyIds?: string[]; preferIds?: string[] },
 ): Question[] {
   let pool = allQuestions;
-  if (subject !== 'mix') pool = allQuestions.filter((q) => q.subject === subject);
-  // Fisher-Yates shuffle
+  if (subject !== 'mix') pool = pool.filter((q) => q.subject === subject);
+  if (options?.onlyIds) {
+    const set = new Set(options.onlyIds);
+    pool = pool.filter((q) => set.has(q.id));
+  }
   const arr = [...pool];
+  // Fisher-Yates shuffle
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr.slice(0, Math.min(count, arr.length));
+}
+
+export function questionById(id: string): Question | undefined {
+  return allQuestions.find((q) => q.id === id);
 }
 
 export function normalizeAnswer(s: string): string {

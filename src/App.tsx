@@ -13,6 +13,8 @@ import {
   levelFromXp,
   xpForLevel,
   oddsOfAcceptance,
+  updateQuestionStat,
+  reviewQuestionIds,
 } from './game';
 import {
   REWARDS,
@@ -29,10 +31,12 @@ type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'results' | 'progress';
 type Mode = 'small' | 'medium' | 'big';
 
+// Real prijímačky tempo: SJL 60 min / 35 otázok (~103 sek/q), Matematika 60 min /
+// 20 otázok (180 sek/q). Priemer 140 sek/q. Big mode = simulácia.
 const MODES: Record<Mode, { count: number; label: string; emoji: string; desc: string; secondsPerQ: number }> = {
-  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: '5 otázok · zahriatie',                   secondsPerQ: 0 },
-  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '10 otázok · bežný tréning',               secondsPerQ: 0 },
-  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '20 otázok · časomiera · môžeš preskočiť', secondsPerQ: 75 },
+  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: '5 otázok · zahriatie',                       secondsPerQ: 0 },
+  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '10 otázok · bežný tréning',                   secondsPerQ: 0 },
+  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '20 otázok · 47 min · ako reálne prijímačky', secondsPerQ: 140 },
 };
 
 type Answer = { question: Question; given: string; correct: boolean; originalIndex: number };
@@ -94,8 +98,10 @@ export default function App() {
     elapsed % 60,
   ).padStart(2, '0')}`;
 
-  function startQuiz() {
-    const qs = pickQuestions(subject, count);
+  function startQuiz(opts?: { reviewOnly?: boolean }) {
+    const reviewIds = opts?.reviewOnly ? reviewQuestionIds(game) : undefined;
+    const qs = pickQuestions(subject, count, reviewIds ? { onlyIds: reviewIds } : undefined);
+    if (qs.length === 0) return;
     setQuestions(qs);
     setOrder(qs.map((_, i) => i));
     setSlot(0);
@@ -127,6 +133,7 @@ export default function App() {
     const ok = isCorrect(q, given);
     setReveal({ correct: ok });
     setAnswers((a) => [...a, { question: q, given, correct: ok, originalIndex: idx }]);
+    setGame((g) => updateQuestionStat(g, q.id, ok));
     if (ok) {
       const newStreak = streak + 1;
       setStreak(newStreak);
@@ -234,7 +241,8 @@ export default function App() {
         setSubject={setSubject}
         mode={mode}
         setMode={setMode}
-        onStart={startQuiz}
+        onStart={() => startQuiz()}
+        onStartReview={() => startQuiz({ reviewOnly: true })}
         onShowProgress={() => setPhase('progress')}
         game={game}
       />
@@ -444,9 +452,11 @@ function Home(props: {
   mode: Mode;
   setMode: (m: Mode) => void;
   onStart: () => void;
+  onStartReview: () => void;
   onShowProgress: () => void;
   game: GameState;
 }) {
+  const reviewCount = reviewQuestionIds(props.game).length;
   const subjects: { id: Subject; label: string; emoji: string }[] = [
     { id: 'mix', label: 'Mix', emoji: '🎯' },
     { id: 'matematika', label: 'Matika', emoji: '🔢' },
@@ -559,9 +569,9 @@ function Home(props: {
           })}
         </div>
         {props.mode === 'big' && (
-          <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 rounded-xl px-3 py-2">
-            🎓 Dry run režim: {Math.round((MODES.big.secondsPerQ * MODES.big.count) / 60)} min časomiera, môžeš
-            preskočiť otázku a vrátiť sa k nej na konci (test-taking taktika).
+          <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 rounded-xl px-3 py-2 leading-relaxed">
+            🎓 Dry run: {Math.round((MODES.big.secondsPerQ * MODES.big.count) / 60)} min časomiera ako reálne
+            prijímačky (SJL 60 min/35q, Mat 60 min/20q). Môžeš preskočiť otázku a vrátiť sa k nej na konci.
           </div>
         )}
 
@@ -572,6 +582,24 @@ function Home(props: {
           ✨ Spustiť tréning
         </button>
       </section>
+
+      {reviewCount > 0 && (
+        <button
+          onClick={props.onStartReview}
+          className="w-full mb-3 bg-gradient-to-r from-rose-50 to-amber-50 border-2 border-rose-200 rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-all shadow-md"
+        >
+          <div className="text-3xl shrink-0">🔁</div>
+          <div className="flex-1 text-left min-w-0">
+            <div className="font-bold text-rose-900 text-sm">Zopakuj svoje chyby</div>
+            <div className="text-[11px] text-rose-700/80 leading-tight">
+              {reviewCount} otáz{reviewCount === 1 ? 'ka' : reviewCount < 5 ? 'ky' : 'ok'} čaká na zvládnutie. Stačí 2× správne za sebou ✨
+            </div>
+          </div>
+          <div className="bg-rose-500 text-white font-black rounded-full px-3 py-1 text-sm shrink-0">
+            {reviewCount}
+          </div>
+        </button>
+      )}
 
       <button
         onClick={props.onShowProgress}
