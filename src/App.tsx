@@ -18,7 +18,7 @@ import {
   type Reward,
   type RewardId,
   unlockedRewardIds,
-  nextRewardForLevel,
+  nextVoucherForLevel,
   readSeenRewards,
   writeSeenRewards,
 } from './rewards';
@@ -26,8 +26,15 @@ import { examCountdownLabel, motivationalLine, daysUntilExam, daysUntilSecondRou
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'results' | 'progress';
+type Mode = 'small' | 'medium' | 'big';
 
-type Answer = { question: Question; given: string; correct: boolean };
+const MODES: Record<Mode, { count: number; label: string; emoji: string; desc: string; secondsPerQ: number }> = {
+  small:  { count: 5,  label: 'Krátky',  emoji: '🌸', desc: '5 otázok · zahriatie',                   secondsPerQ: 0 },
+  medium: { count: 10, label: 'Stredný', emoji: '⚡', desc: '10 otázok · bežný tréning',               secondsPerQ: 0 },
+  big:    { count: 20, label: 'Dry run', emoji: '🎓', desc: '20 otázok · časomiera · môžeš preskočiť', secondsPerQ: 75 },
+};
+
+type Answer = { question: Question; given: string; correct: boolean; originalIndex: number };
 
 type Award = {
   xpGained: number;
@@ -38,13 +45,20 @@ type Award = {
 
 const img = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
+// Slovak gender form picker: gen('girl', 'pripravená', 'pripravený')
+function gen(g: 'girl' | 'boy' | null | undefined, fem: string, masc: string): string {
+  return g === 'boy' ? masc : fem;
+}
+
 export default function App() {
   const [game, setGame] = useState<GameState>(() => migrateOldStats(loadGame()));
   const [phase, setPhase] = useState<Phase>('home');
   const [subject, setSubject] = useState<Subject>('mix');
-  const [count, setCount] = useState(10);
+  const [mode, setMode] = useState<Mode>('medium');
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [current, setCurrent] = useState(0);
+  const [order, setOrder] = useState<number[]>([]); // poradie v ktorom sa otázky prezentujú (indexy do questions)
+  const [slot, setSlot] = useState(0); // pointer do order
+  const [skippedOnce, setSkippedOnce] = useState<Set<number>>(new Set());
   const [given, setGiven] = useState('');
   const [reveal, setReveal] = useState<null | { correct: boolean }>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
@@ -54,9 +68,16 @@ export default function App() {
   const [now, setNow] = useState<number>(0);
   const [award, setAward] = useState<Award | null>(null);
 
+  const count = MODES[mode].count;
+
   useEffect(() => {
     saveGame(game);
   }, [game]);
+
+  // Theme follows gender; default = girl
+  useEffect(() => {
+    document.body.dataset.theme = game.gender ?? 'girl';
+  }, [game.gender]);
 
   useEffect(() => {
     if (phase !== 'quiz') return;
@@ -73,7 +94,9 @@ export default function App() {
   function startQuiz() {
     const qs = pickQuestions(subject, count);
     setQuestions(qs);
-    setCurrent(0);
+    setOrder(qs.map((_, i) => i));
+    setSlot(0);
+    setSkippedOnce(new Set());
     setGiven('');
     setReveal(null);
     setAnswers([]);
@@ -83,13 +106,24 @@ export default function App() {
     setPhase('quiz');
   }
 
+  function skipCurrent() {
+    if (reveal) return;
+    const idx = order[slot];
+    setSkippedOnce((s) => new Set(s).add(idx));
+    setOrder((o) => [...o.slice(0, slot), ...o.slice(slot + 1), idx]);
+    // slot stays — order[slot] is now the next question
+    setGiven('');
+    setReveal(null);
+  }
+
   function submit() {
     if (reveal) return;
-    const q = questions[current];
+    const idx = order[slot];
+    const q = questions[idx];
     if (!given.trim()) return;
     const ok = isCorrect(q, given);
     setReveal({ correct: ok });
-    setAnswers((a) => [...a, { question: q, given, correct: ok }]);
+    setAnswers((a) => [...a, { question: q, given, correct: ok, originalIndex: idx }]);
     if (ok) {
       const newStreak = streak + 1;
       setStreak(newStreak);
@@ -108,7 +142,7 @@ export default function App() {
   }
 
   function next() {
-    if (current + 1 >= questions.length) {
+    if (slot + 1 >= order.length) {
       const correct = answers.filter((a) => a.correct).length;
       const mathCorrect = answers.filter(
         (a) => a.correct && a.question.subject === 'matematika',
@@ -167,16 +201,18 @@ export default function App() {
       }
       setPhase('results');
     } else {
-      setCurrent((c) => c + 1);
+      setSlot((s) => s + 1);
       setGiven('');
       setReveal(null);
     }
   }
 
   // Onboarding
-  if (!game.name) {
+  if (!game.name || !game.gender) {
     return (
-      <Onboarding onSubmit={(name) => setGame((g) => ({ ...g, name }))} />
+      <Onboarding
+        onSubmit={(name, gender) => setGame((g) => ({ ...g, name, gender }))}
+      />
     );
   }
 
@@ -189,8 +225,8 @@ export default function App() {
       <Home
         subject={subject}
         setSubject={setSubject}
-        count={count}
-        setCount={setCount}
+        mode={mode}
+        setMode={setMode}
         onStart={startQuiz}
         onShowProgress={() => setPhase('progress')}
         game={game}
@@ -213,17 +249,21 @@ export default function App() {
     );
   }
 
-  const q = questions[current];
+  const q = questions[order[slot]];
   return (
     <Quiz
       q={q}
-      index={current}
-      total={questions.length}
+      index={slot}
+      total={order.length}
       given={given}
       setGiven={setGiven}
       reveal={reveal}
       submit={submit}
       next={next}
+      onSkip={mode === 'big' ? skipCurrent : null}
+      canSkip={mode === 'big' && !skippedOnce.has(order[slot])}
+      mode={mode}
+      elapsed={elapsed}
       elapsedStr={elapsedStr}
       streak={streak}
       name={game.name}
@@ -265,8 +305,14 @@ function Mascot({
 }
 
 // ====================== ONBOARDING ======================
-function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
+function Onboarding({ onSubmit }: { onSubmit: (name: string, gender: 'girl' | 'boy') => void }) {
   const [name, setName] = useState('');
+  const [gender, setGender] = useState<'girl' | 'boy' | null>(null);
+
+  // Live preview of theme while choosing
+  useEffect(() => {
+    document.body.dataset.theme = gender ?? 'girl';
+  }, [gender]);
   return (
     <Container>
       <div className="text-center pt-4 sm:pt-6">
@@ -286,32 +332,52 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
           1. termín 4. máj · 2. termín 11. máj · 2 voľby na prihláške
         </div>
         <p className="text-indigo-800/85 mt-3 text-base leading-relaxed px-1">
-          Si šikovná a ja viem, že to zvládneš. 💪
+          {gen(gender, 'Si šikovná', 'Si šikovný')} a ja viem, že to zvládneš. 💪
           <br />
           {motivationalLine()}
         </p>
       </div>
       <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-5 sm:p-6 mt-5">
         <label className="block text-sm font-semibold text-indigo-900 mb-2">
-          Ako sa voláš? 🌸
+          Si dievča alebo chlapec?
         </label>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {([
+            { id: 'girl', emoji: '👧', label: 'Dievča' },
+            { id: 'boy',  emoji: '👦', label: 'Chlapec' },
+          ] as const).map((g) => (
+            <button
+              key={g.id}
+              onClick={() => setGender(g.id)}
+              className={`rounded-2xl p-4 border-2 transition-all flex flex-col items-center gap-1 ${
+                gender === g.id
+                  ? 'border-indigo-500 bg-indigo-50 shadow-md scale-[1.02]'
+                  : 'border-transparent bg-white active:scale-95'
+              }`}
+            >
+              <div className="text-4xl">{g.emoji}</div>
+              <div className="font-bold text-indigo-950 text-sm">{g.label}</div>
+            </button>
+          ))}
+        </div>
+
+        <label className="block text-sm font-semibold text-indigo-900 mb-2">Ako sa voláš?</label>
         <input
-          autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && name.trim()) onSubmit(name.trim());
+            if (e.key === 'Enter' && name.trim() && gender) onSubmit(name.trim(), gender);
           }}
-          placeholder="napr. Eli"
+          placeholder={gender === 'boy' ? 'napr. Adam' : 'napr. Eli'}
           maxLength={20}
           className="w-full px-5 py-4 rounded-2xl border-2 border-indigo-200 bg-white text-xl text-center text-indigo-950 focus:border-indigo-500 focus:outline-none"
         />
         <button
-          disabled={!name.trim()}
-          onClick={() => onSubmit(name.trim())}
-          className="w-full mt-4 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-indigo-500 text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
+          disabled={!name.trim() || !gender}
+          onClick={() => gender && onSubmit(name.trim(), gender)}
+          className="w-full mt-4 py-4 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] via-[var(--grad-via)] to-[var(--grad-to)] text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
         >
-          {name.trim() ? `Poďme na to, ${name.trim()}! ✨` : 'Začnime ✨'}
+          {name.trim() && gender ? `Poďme na to, ${name.trim()}! ✨` : 'Začnime ✨'}
         </button>
       </div>
       <p className="text-center text-xs text-indigo-700/70 mt-5 px-3 leading-relaxed">
@@ -368,8 +434,8 @@ function LevelBar({ game, onClick }: { game: GameState; onClick?: () => void }) 
 function Home(props: {
   subject: Subject;
   setSubject: (s: Subject) => void;
-  count: number;
-  setCount: (n: number) => void;
+  mode: Mode;
+  setMode: (m: Mode) => void;
   onStart: () => void;
   onShowProgress: () => void;
   game: GameState;
@@ -381,10 +447,10 @@ function Home(props: {
   ];
 
   const level = levelFromXp(props.game.xp);
-  const next = nextRewardForLevel(level);
+  const next = nextVoucherForLevel(level);
   const xpToNext = next && next.unlock.kind === 'level' ? xpForLevel(next.unlock.level) - props.game.xp : 0;
   const greeting = props.game.totalQuizzes === 0
-    ? `Pripravená, ${props.game.name}? 🌟`
+    ? `${gen(props.game.gender, 'Pripravená', 'Pripravený')}, ${props.game.name}? 🌟`
     : props.game.dailyStreak >= 2
     ? `Vitaj späť, ${props.game.name}! 🔥`
     : `Ahoj ${props.game.name}!`;
@@ -409,6 +475,8 @@ function Home(props: {
       <div className="mb-3">
         <LevelBar game={props.game} onClick={props.onShowProgress} />
       </div>
+
+      <DailyStreakBanner game={props.game} />
 
       <ExamCard />
 
@@ -450,27 +518,47 @@ function Home(props: {
         </div>
 
         <h2 className="text-base sm:text-lg font-semibold text-indigo-950 mt-5 mb-2">
-          Počet otázok
+          Veľkosť tréningu
         </h2>
-        <div className="grid grid-cols-4 gap-2">
-          {[5, 10, 15, 20].map((n) => (
-            <button
-              key={n}
-              onClick={() => props.setCount(n)}
-              className={`py-3 rounded-xl font-bold transition-all ${
-                props.count === n
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-white text-indigo-700 active:scale-95'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+        <div className="grid grid-cols-3 gap-2">
+          {(['small', 'medium', 'big'] as Mode[]).map((m) => {
+            const def = MODES[m];
+            const sel = props.mode === m;
+            return (
+              <button
+                key={m}
+                onClick={() => props.setMode(m)}
+                className={`rounded-2xl p-3 border-2 transition-all min-h-[96px] flex flex-col items-center justify-center text-center ${
+                  sel
+                    ? 'border-indigo-500 bg-indigo-50 shadow-md scale-[1.02]'
+                    : 'border-transparent bg-white active:scale-95'
+                }`}
+              >
+                <div className="text-2xl mb-0.5">{def.emoji}</div>
+                <div className="font-bold text-indigo-950 text-sm">{def.label}</div>
+                <div className="text-[10px] text-indigo-700/70 leading-tight mt-0.5">
+                  {def.count} ot.
+                  {def.secondsPerQ > 0 && (
+                    <>
+                      {' · '}
+                      <span className="text-rose-600 font-bold">⏳</span>
+                    </>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
+        {props.mode === 'big' && (
+          <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 rounded-xl px-3 py-2">
+            🎓 Dry run režim: {Math.round((MODES.big.secondsPerQ * MODES.big.count) / 60)} min časomiera, môžeš
+            preskočiť otázku a vrátiť sa k nej na konci (test-taking taktika).
+          </div>
+        )}
 
         <button
           onClick={props.onStart}
-          className="w-full mt-6 py-4 sm:py-5 rounded-2xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-indigo-500 text-white font-bold text-lg sm:text-xl shadow-lg shadow-fuchsia-300/40 active:scale-[0.98] transition-all"
+          className="w-full mt-6 py-4 sm:py-5 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] via-[var(--grad-via)] to-[var(--grad-to)] text-white font-bold text-lg sm:text-xl shadow-lg shadow-fuchsia-300/40 active:scale-[0.98] transition-all"
         >
           ✨ Spustiť tréning
         </button>
@@ -507,11 +595,21 @@ function Quiz(props: {
   reveal: null | { correct: boolean };
   submit: () => void;
   next: () => void;
+  onSkip: (() => void) | null;
+  canSkip: boolean;
+  mode: Mode;
+  elapsed: number;
   elapsedStr: string;
   streak: number;
   name: string;
 }) {
-  const { q, index, total, given, setGiven, reveal, submit, next, elapsedStr, streak, name } = props;
+  const { q, index, total, given, setGiven, reveal, submit, next, onSkip, canSkip, mode, elapsed, elapsedStr, streak, name } = props;
+  const totalLimit = MODES[mode].secondsPerQ * total; // 0 = no limit
+  const remainingSec = totalLimit > 0 ? Math.max(0, totalLimit - elapsed) : 0;
+  const remainingStr = `${String(Math.floor(remainingSec / 60)).padStart(2, '0')}:${String(
+    remainingSec % 60,
+  ).padStart(2, '0')}`;
+  const lowTime = totalLimit > 0 && remainingSec < 60;
   const progress = ((index + (reveal ? 1 : 0)) / total) * 100;
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -530,6 +628,8 @@ function Quiz(props: {
       `Bomba, ${name}!`,
       `Skvelé, ${name}! 🌟`,
       `Presne tak, ${name}!`,
+      `Boom, ${name}!`,
+      `Si v zóne, ${name}!`,
     ];
     return opts[Math.floor(Math.random() * opts.length)];
   }, [reveal?.correct, q.id]);
@@ -539,17 +639,30 @@ function Quiz(props: {
       <div className="flex items-center justify-between mb-3 text-sm font-medium text-indigo-700">
         <span>
           {index + 1} / {total}
+          {mode === 'big' && (
+            <span className="ml-2 text-[10px] uppercase font-bold text-rose-600">Dry run</span>
+          )}
         </span>
         <div className="flex items-center gap-3">
           {streak >= 2 && (
             <span className="font-bold text-orange-600 animate-pulse">🔥 {streak}</span>
           )}
-          <span className="font-mono">⏱ {elapsedStr}</span>
+          {totalLimit > 0 ? (
+            <span
+              className={`font-mono font-bold ${
+                lowTime ? 'text-rose-600 animate-pulse' : 'text-indigo-700'
+              }`}
+            >
+              ⏳ {remainingStr}
+            </span>
+          ) : (
+            <span className="font-mono">⏱ {elapsedStr}</span>
+          )}
         </div>
       </div>
       <div className="h-2 w-full bg-white/60 rounded-full overflow-hidden mb-4">
         <div
-          className="h-full bg-gradient-to-r from-pink-500 to-indigo-500 transition-all duration-500"
+          className="h-full bg-gradient-to-r from-[var(--grad-from)] to-[var(--grad-to)] transition-all duration-500"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -655,17 +768,28 @@ function Quiz(props: {
 
       <div className="sticky bottom-3 mt-4">
         {!reveal ? (
-          <button
-            onClick={submit}
-            disabled={!given.trim()}
-            className="w-full px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-lg shadow-lg shadow-indigo-400/30 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
-          >
-            Odpovedať
-          </button>
+          <div className="flex gap-2">
+            {onSkip && canSkip && (
+              <button
+                onClick={onSkip}
+                className="px-4 py-4 rounded-2xl bg-white border-2 border-indigo-200 text-indigo-700 font-bold shadow-md active:scale-[0.98] transition-all"
+                title="Otázku odložím na koniec a vrátim sa k nej"
+              >
+                Preskočiť →
+              </button>
+            )}
+            <button
+              onClick={submit}
+              disabled={!given.trim()}
+              className="flex-1 px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-lg shadow-lg shadow-indigo-400/30 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
+            >
+              Odpovedať
+            </button>
+          </div>
         ) : (
           <button
             onClick={next}
-            className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-pink-500 to-indigo-500 text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 active:scale-[0.98] transition-all"
+            className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] via-[var(--grad-via)] to-[var(--grad-to)] text-white font-bold text-lg shadow-lg shadow-fuchsia-300/40 active:scale-[0.98] transition-all"
           >
             {index + 1 >= total ? 'Vidieť výsledky →' : 'Ďalšia otázka →'}
           </button>
@@ -705,7 +829,7 @@ function Results(props: {
           {message.emoji} {message.text}
         </h1>
         <div className="mt-4">
-          <div className="text-5xl sm:text-6xl font-black bg-gradient-to-r from-pink-500 to-indigo-500 bg-clip-text text-transparent">
+          <div className="text-5xl sm:text-6xl font-black bg-gradient-to-r from-[var(--grad-from)] to-[var(--grad-to)] bg-clip-text text-transparent">
             {pct} %
           </div>
           <div className="text-indigo-700 mt-1 text-sm sm:text-base">
@@ -734,29 +858,38 @@ function Results(props: {
                 </div>
               </div>
             )}
-            {props.award.newRewards.length > 0 && (
-              <div className="rounded-3xl bg-gradient-to-br from-amber-200 via-pink-200 to-indigo-200 p-1">
-                <div className="bg-white rounded-[20px] p-4">
-                  <div className="text-[11px] uppercase font-bold text-pink-700 tracking-widest">
-                    🎁 Nová odmena!
+            {props.award.newRewards.map((r) => (
+              <div
+                key={r.id}
+                className={`rounded-3xl p-1 ${
+                  r.kind === 'voucher'
+                    ? 'bg-gradient-to-br from-amber-200 via-pink-200 to-indigo-200'
+                    : 'bg-gradient-to-br from-fuchsia-200 to-indigo-200'
+                }`}
+              >
+                <div className="bg-white rounded-[20px] p-4 text-left">
+                  <div
+                    className={`text-[11px] uppercase font-bold tracking-widest ${
+                      r.kind === 'voucher' ? 'text-pink-700' : 'text-fuchsia-700'
+                    }`}
+                  >
+                    {r.kind === 'voucher' ? '🎁 Voucher odomknutý!' : '✨ Míľnik dosiahnutý'}
                   </div>
-                  {props.award.newRewards.map((r) => (
-                    <div key={r.id} className="mt-2 text-left">
-                      <div className="flex items-center gap-3">
-                        <div className="text-4xl">{r.emoji}</div>
-                        <div className="min-w-0">
-                          <div className="font-black text-indigo-950">{r.title}</div>
-                          <div className="text-xs text-indigo-700/80">{r.desc}</div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 rounded-lg px-2 py-1">
-                        💌 Povedz mame alebo otcovi — odomkla si vauchera!
-                      </div>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="text-4xl">{r.emoji}</div>
+                    <div className="min-w-0">
+                      <div className="font-black text-indigo-950">{r.title}</div>
+                      <div className="text-xs text-indigo-700/80">{r.desc}</div>
                     </div>
-                  ))}
+                  </div>
+                  {r.kind === 'voucher' && (
+                    <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 rounded-lg px-2 py-1">
+                      💌 Povedz mame alebo otcovi — odomkla si vaucher!
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+            ))}
             {props.award.newBadges.length > 0 && (
               <div className="rounded-2xl bg-gradient-to-br from-pink-100 to-indigo-100 p-3">
                 <div className="text-xs uppercase font-bold text-pink-700 mb-2">Nové odznaky</div>
@@ -772,7 +905,7 @@ function Results(props: {
 
         <button
           onClick={props.onAgain}
-          className="mt-6 w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-pink-500 to-indigo-500 text-white font-bold shadow-md active:scale-[0.98] transition-all"
+          className="mt-6 w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[var(--grad-from)] to-[var(--grad-to)] text-white font-bold shadow-md active:scale-[0.98] transition-all"
         >
           Ešte raz ✨
         </button>
@@ -936,14 +1069,24 @@ function LevelsTab({ currentLevel, currentXp }: { currentLevel: number; currentX
   const rows = [];
   for (let lvl = 1; lvl <= maxLevel; lvl++) {
     const xpReq = xpForLevel(lvl);
-    const reward = REWARDS.find((r) => r.unlock.kind === 'level' && r.unlock.level === lvl);
+    const reward = REWARDS.find(
+      (r) =>
+        (r.kind === 'voucher' || r.kind === 'milestone') &&
+        r.unlock.kind === 'level' &&
+        r.unlock.level === lvl,
+    );
     const reached = currentLevel >= lvl;
+    const isVoucher = reward?.kind === 'voucher';
     rows.push(
       <div
         key={lvl}
         className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
           lvl === currentLevel
             ? 'border-indigo-500 bg-indigo-50 shadow-md'
+            : isVoucher
+            ? reached
+              ? 'border-amber-300 bg-gradient-to-r from-amber-50 to-pink-50'
+              : 'border-amber-200 bg-amber-50/30'
             : reached
             ? 'border-emerald-200 bg-emerald-50/40'
             : 'border-indigo-100 bg-white/60'
@@ -952,7 +1095,9 @@ function LevelsTab({ currentLevel, currentXp }: { currentLevel: number; currentX
         <span
           className={`inline-flex items-center justify-center w-10 h-10 rounded-full font-black text-sm shrink-0 ${
             reached
-              ? 'bg-gradient-to-br from-amber-300 to-pink-500 text-white shadow'
+              ? isVoucher
+                ? 'bg-gradient-to-br from-amber-400 to-pink-600 text-white shadow'
+                : 'bg-gradient-to-br from-amber-300 to-pink-500 text-white shadow'
               : 'bg-indigo-100 text-indigo-400'
           }`}
         >
@@ -963,6 +1108,9 @@ function LevelsTab({ currentLevel, currentXp }: { currentLevel: number; currentX
             Level {lvl}
             {lvl === currentLevel && (
               <span className="ml-2 text-[10px] uppercase font-bold text-indigo-600">si tu</span>
+            )}
+            {isVoucher && (
+              <span className="ml-2 text-[10px] uppercase font-bold text-amber-700">voucher</span>
             )}
           </div>
           <div className="text-xs text-indigo-700/70">
@@ -984,8 +1132,8 @@ function LevelsTab({ currentLevel, currentXp }: { currentLevel: number; currentX
   }
   return (
     <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-3 sm:p-4">
-      <div className="text-sm text-indigo-700/80 mb-3 px-1">
-        Za každú správnu odpoveď ↑ +10 XP. Bonus za sériu (+10 / +25) a za stopercentný test (+50).
+      <div className="text-xs text-indigo-700/70 mb-3 px-1">
+        +10 XP za správnu · bonus za sériu (+10 / +25) · perfect test (+50)
       </div>
       <div className="space-y-2">{rows}</div>
     </div>
@@ -999,14 +1147,14 @@ function RewardsTab({
   unlocked: Set<RewardId>;
   currentLevel: number;
 }) {
-  const main = REWARDS.filter((r) => !r.isEgg);
-  const eggs = REWARDS.filter((r) => r.isEgg);
+  const main = REWARDS.filter((r) => r.kind === 'voucher');
+  const eggs = REWARDS.filter((r) => r.kind === 'egg');
 
   return (
     <div className="space-y-4">
       <div className="bg-white/80 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-3 sm:p-4">
         <h2 className="text-base font-semibold text-indigo-950 px-1 mb-2">
-          Odmeny · {[...unlocked].filter((id) => !REWARDS.find((r) => r.id === id)?.isEgg).length} /{' '}
+          Odmeny · {[...unlocked].filter((id) => REWARDS.find((r) => r.id === id)?.kind === 'voucher').length} /{' '}
           {main.length}
         </h2>
         <div className="space-y-2">
@@ -1060,7 +1208,7 @@ function RewardsTab({
 
       <div className="bg-gradient-to-br from-fuchsia-50 to-indigo-50 rounded-3xl shadow-md p-3 sm:p-4">
         <h2 className="text-base font-semibold text-indigo-950 px-1 mb-2">
-          ✨ Tajné odmeny ({[...unlocked].filter((id) => REWARDS.find((r) => r.id === id)?.isEgg).length} / {eggs.length})
+          ✨ Tajné odmeny ({[...unlocked].filter((id) => REWARDS.find((r) => r.id === id)?.kind === 'egg').length} / {eggs.length})
         </h2>
         <div className="space-y-2">
           {eggs.map((r) => {
@@ -1111,6 +1259,57 @@ function BadgeChip({ id }: { id: BadgeId }) {
         <div className="text-xs font-bold text-indigo-950 truncate">{b.title}</div>
         <div className="text-[10px] text-indigo-700/70 truncate">{b.desc}</div>
       </div>
+    </div>
+  );
+}
+
+function DailyStreakBanner({ game }: { game: GameState }) {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const playedToday = game.lastPlayedDate === todayStr;
+  const yest = new Date(today);
+  yest.setDate(yest.getDate() - 1);
+  const yestStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+  const playedYesterday = game.lastPlayedDate === yestStr;
+
+  if (game.dailyStreak === 0 && !playedToday) {
+    return (
+      <div className="mb-3 rounded-2xl bg-gradient-to-r from-orange-100 to-amber-100 p-3 flex items-center gap-3 border-2 border-orange-200">
+        <div className="text-3xl">🔥</div>
+        <div className="flex-1 text-sm">
+          <div className="font-bold text-orange-900">Začni dennú sériu!</div>
+          <div className="text-[11px] text-orange-800/80">Trénuj každý deň a sleduj, ako tvoj plameň rastie.</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Has streak — emphasize it
+  const flame = game.dailyStreak >= 7 ? '🔥🔥🔥' : game.dailyStreak >= 3 ? '🔥🔥' : '🔥';
+  return (
+    <div
+      className={`mb-3 rounded-2xl p-3 flex items-center gap-3 border-2 ${
+        playedToday
+          ? 'bg-gradient-to-r from-orange-100 via-amber-100 to-rose-100 border-orange-300 shadow-md'
+          : playedYesterday
+          ? 'bg-gradient-to-r from-rose-100 to-amber-100 border-rose-300 animate-pulse'
+          : 'bg-orange-50 border-orange-200'
+      }`}
+    >
+      <div className="text-3xl shrink-0">{flame}</div>
+      <div className="flex-1 min-w-0">
+        <div className="font-black text-orange-900 text-base leading-tight">
+          {game.dailyStreak} {game.dailyStreak === 1 ? 'deň' : game.dailyStreak < 5 ? 'dni' : 'dní'} v rade
+        </div>
+        <div className="text-[11px] text-orange-800/80 leading-tight mt-0.5">
+          {playedToday
+            ? `Dnes si už ${gen(game.gender, 'trénovala', 'trénoval')} — séria pokračuje! 🌟`
+            : playedYesterday
+            ? `Dnes si ešte ${gen(game.gender, 'netrénovala', 'netrénoval')} — nedaj zhasnúť plameň ${game.dailyStreak} dní!`
+            : 'Vráť sa dnes a obnov svoju sériu!'}
+        </div>
+      </div>
+      <div className="text-2xl font-black text-orange-700 shrink-0">{game.dailyStreak}</div>
     </div>
   );
 }

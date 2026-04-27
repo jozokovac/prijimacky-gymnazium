@@ -1,23 +1,25 @@
-// Reálne odmeny / vouchery — odomykajú sa pri dosiahnutí levelu.
-// Niektoré sú „easter eggs" za špecifické úspechy.
+// Odmeny: vouchere (material — od rodičov) + míľniky (intrinsic — afirmácie)
+// + tajné easter eggs.
+//
+// Filozofia: prvých pár levelov = pocit „si na ceste, mozog rastie",
+// každý 5. level = niečo materiálne. Cieľom je naučiť hľadať hodnotu
+// v procese a v sebe, nie v sladkostiach.
 
 import type { GameState } from './game';
 import { levelFromXp } from './game';
 
 export type RewardId =
-  | 'pizza-party'
-  | 'pick-movie'
-  | 'ice-cream-date'
-  | 'pancake-brunch'
-  | 'cinema-friend'
-  | 'trampoline-park'
-  | 'new-comic'
-  | 'sushi-night'
-  | 'manicure'
-  | 'sleepover'
-  | 'aupark-friend'
-  | 'no-chores-day'
-  | 'shopping-budget'
+  // Vouchers (material)
+  | 'pizza-party'        // L5
+  | 'cinema-friend'      // L10
+  | 'aupark-friend'      // L15
+  | 'shopping-budget'    // L20
+  // Milestones (intrinsic)
+  | 'm-l2'  | 'm-l3'  | 'm-l4'
+  | 'm-l6'  | 'm-l7'  | 'm-l8'  | 'm-l9'
+  | 'm-l11' | 'm-l12' | 'm-l13' | 'm-l14'
+  | 'm-l16' | 'm-l17' | 'm-l18' | 'm-l19'
+  // Eggs
   | 'breakfast-in-bed'
   | 'unicorn-secret';
 
@@ -26,27 +28,80 @@ export type Reward = {
   emoji: string;
   title: string;
   desc: string;
+  kind: 'voucher' | 'milestone' | 'egg';
   unlock: { kind: 'level'; level: number } | { kind: 'condition'; label: string };
-  isEgg?: boolean;
 };
 
 export const REWARDS: Reward[] = [
-  { id: 'pizza-party',       emoji: '🍕', title: 'Pizza večer',                  desc: 'Vyber si pizzu na piatkovú večeru pre celú rodinu.',          unlock: { kind: 'level', level: 2 } },
-  { id: 'pick-movie',        emoji: '🎬', title: 'Tvoj film na večer',           desc: 'Vyberáš film na rodinný filmový večer.',                       unlock: { kind: 'level', level: 3 } },
-  { id: 'ice-cream-date',    emoji: '🍦', title: 'Zmrzlina s mamou alebo otcom', desc: 'Romantická zmrzlinová prechádzka — len ty a jeden rodič.',     unlock: { kind: 'level', level: 4 } },
-  { id: 'pancake-brunch',    emoji: '🥞', title: 'Pancake brunch',               desc: 'Nedeľný brunch podľa tvojho výberu — palacinky, vafle, čokoľvek.', unlock: { kind: 'level', level: 5 } },
-  { id: 'cinema-friend',     emoji: '🎬', title: '2× lístky do kina s kamoškou', desc: 'Vyberte si film, ideme do kina! Občerstvenie v cene.',         unlock: { kind: 'level', level: 6 } },
-  { id: 'trampoline-park',   emoji: '🤸', title: 'Trampolínový park',            desc: '2 hodiny v trampolínovom parku — pozvi kamošku.',              unlock: { kind: 'level', level: 7 } },
-  { id: 'new-comic',         emoji: '📖', title: 'Nový komiks',                  desc: 'Ideme do Martinusu — vyberáš si akýkoľvek komiks alebo manga.', unlock: { kind: 'level', level: 8 } },
-  { id: 'sushi-night',       emoji: '🍣', title: 'Sushi večera',                 desc: 'Sushi pre celú rodinu — alebo donáška, ako chceš.',            unlock: { kind: 'level', level: 9 } },
-  { id: 'manicure',          emoji: '💅', title: 'Manikúra s mamou',             desc: 'Spoločný salón — vyberáš si farbu aj dizajn.',                  unlock: { kind: 'level', level: 10 } },
-  { id: 'sleepover',         emoji: '🛌', title: 'Sleepover s kamoškou',         desc: 'Pozvi kamošku, večer pizza + filmy.',                          unlock: { kind: 'level', level: 12 } },
-  { id: 'aupark-friend',     emoji: '🛍️', title: 'Aupark deň s kamoškou',        desc: 'Rozpočet 30 € + zmrzlina, mama vás zavezie.',                  unlock: { kind: 'level', level: 14 } },
-  { id: 'no-chores-day',     emoji: '🛋️', title: 'Deň bez povinností',           desc: 'Žiadne upratovanie, riad, ani povinnosti — celú jednu sobotu.', unlock: { kind: 'level', level: 16 } },
-  { id: 'shopping-budget',   emoji: '💸', title: 'Shopping rozpočet 50 €',       desc: 'Vyber si oblečenie / kozmetiku / čo chceš za 50 €.',           unlock: { kind: 'level', level: 18 } },
-  // Easter eggs
-  { id: 'breakfast-in-bed',  emoji: '🥐', title: 'Raňajky do postele',           desc: 'Tajná odmena: trénovala si 7 dní v rade!',                     unlock: { kind: 'condition', label: 'Denná séria 7 dní' }, isEgg: true },
-  { id: 'unicorn-secret',    emoji: '🦄', title: 'Tajný jednorožec',             desc: 'Tri 100 % testy za sebou — si génius!',                        unlock: { kind: 'condition', label: '3× perfektné skóre po sebe' }, isEgg: true },
+  // ====== Material — every 5 levels ======
+  {
+    id: 'pizza-party',
+    emoji: '🍕',
+    title: 'Pizza večer',
+    desc: 'Vyber si pizzu na piatkovú večeru pre celú rodinu.',
+    kind: 'voucher',
+    unlock: { kind: 'level', level: 5 },
+  },
+  {
+    id: 'cinema-friend',
+    emoji: '🎬',
+    title: '2× lístky do kina s kamoškou',
+    desc: 'Vyberte si film, ideme do kina! Občerstvenie v cene.',
+    kind: 'voucher',
+    unlock: { kind: 'level', level: 10 },
+  },
+  {
+    id: 'aupark-friend',
+    emoji: '🛍️',
+    title: 'Aupark deň s kamoškou',
+    desc: 'Rozpočet 30 € + zmrzlina, mama vás zavezie.',
+    kind: 'voucher',
+    unlock: { kind: 'level', level: 15 },
+  },
+  {
+    id: 'shopping-budget',
+    emoji: '💸',
+    title: 'Shopping deň · 50 €',
+    desc: 'Vyber si oblečenie, kozmetiku, čo chceš — 50 € rozpočet.',
+    kind: 'voucher',
+    unlock: { kind: 'level', level: 20 },
+  },
+
+  // ====== Intrinsic milestones — affirmácie pre vnútorný rast ======
+  // L1 = štart, žiadna afirmácia
+  { id: 'm-l2',  emoji: '🌱', title: 'Si v hre!',     desc: 'Bomba — držíš tempo.',          kind: 'milestone', unlock: { kind: 'level', level: 2 } },
+  { id: 'm-l3',  emoji: '⭐', title: 'Si v rytme',    desc: 'Tri levely za sebou!',          kind: 'milestone', unlock: { kind: 'level', level: 3 } },
+  { id: 'm-l4',  emoji: '💪', title: 'Sila rastie',   desc: 'Vidieť ťa makať.',              kind: 'milestone', unlock: { kind: 'level', level: 4 } },
+  { id: 'm-l6',  emoji: '🧠', title: 'Big brain',     desc: 'Levelujeme!',                    kind: 'milestone', unlock: { kind: 'level', level: 6 } },
+  { id: 'm-l7',  emoji: '🎯', title: 'Na ceste',      desc: 'Skvelý progres.',                kind: 'milestone', unlock: { kind: 'level', level: 7 } },
+  { id: 'm-l8',  emoji: '🌟', title: 'Star mode',     desc: 'Žiariš.',                        kind: 'milestone', unlock: { kind: 'level', level: 8 } },
+  { id: 'm-l9',  emoji: '🚀', title: 'Skoro tam',     desc: 'Ešte level a ďalšia odmena!',    kind: 'milestone', unlock: { kind: 'level', level: 9 } },
+  { id: 'm-l11', emoji: '🏆', title: 'Pro level',     desc: 'Si v top forme.',                kind: 'milestone', unlock: { kind: 'level', level: 11 } },
+  { id: 'm-l12', emoji: '🦋', title: 'Glow up',       desc: 'Veľký progres za krátky čas.',   kind: 'milestone', unlock: { kind: 'level', level: 12 } },
+  { id: 'm-l13', emoji: '👑', title: 'Queen vibes',   desc: 'Vládneš týmto akadémiám.',       kind: 'milestone', unlock: { kind: 'level', level: 13 } },
+  { id: 'm-l14', emoji: '💎', title: 'Diamond',       desc: 'Pevná, žiarivá, drahá.',         kind: 'milestone', unlock: { kind: 'level', level: 14 } },
+  { id: 'm-l16', emoji: '🌈', title: 'Magic',         desc: 'Vyzerá to ako kúzlo.',           kind: 'milestone', unlock: { kind: 'level', level: 16 } },
+  { id: 'm-l17', emoji: '🔥', title: 'Final push',    desc: 'Tri levely do top!',             kind: 'milestone', unlock: { kind: 'level', level: 17 } },
+  { id: 'm-l18', emoji: '⚡', title: 'Lightning',     desc: 'Rýchla a presná.',               kind: 'milestone', unlock: { kind: 'level', level: 18 } },
+  { id: 'm-l19', emoji: '🎓', title: 'Pred bránou',   desc: 'Top je na dosah.',               kind: 'milestone', unlock: { kind: 'level', level: 19 } },
+
+  // ====== Easter eggs ======
+  {
+    id: 'breakfast-in-bed',
+    emoji: '🥐',
+    title: 'Raňajky do postele',
+    desc: 'Tajná odmena: trénovala si 7 dní v rade!',
+    kind: 'egg',
+    unlock: { kind: 'condition', label: 'Denná séria 7 dní' },
+  },
+  {
+    id: 'unicorn-secret',
+    emoji: '🦄',
+    title: 'Tajný jednorožec',
+    desc: 'Tri 100 % testy za sebou — si génius!',
+    kind: 'egg',
+    unlock: { kind: 'condition', label: '3× perfektné skóre po sebe' },
+  },
 ];
 
 export function unlockedRewardIds(game: GameState): Set<RewardId> {
@@ -62,8 +117,22 @@ export function unlockedRewardIds(game: GameState): Set<RewardId> {
   return out;
 }
 
+export function nextVoucherForLevel(currentLevel: number): Reward | null {
+  const rs = REWARDS.filter(
+    (r) => r.kind === 'voucher' && r.unlock.kind === 'level' && r.unlock.level > currentLevel,
+  );
+  rs.sort((a, b) => (a.unlock as any).level - (b.unlock as any).level);
+  return rs[0] ?? null;
+}
+
+// Spätná kompatibilita: nextRewardForLevel = ďalšia odmena akéhokoľvek typu
 export function nextRewardForLevel(currentLevel: number): Reward | null {
-  const rs = REWARDS.filter((r) => r.unlock.kind === 'level' && r.unlock.level > currentLevel);
+  const rs = REWARDS.filter(
+    (r) =>
+      (r.kind === 'voucher' || r.kind === 'milestone') &&
+      r.unlock.kind === 'level' &&
+      r.unlock.level > currentLevel,
+  );
   rs.sort((a, b) => (a.unlock as any).level - (b.unlock as any).level);
   return rs[0] ?? null;
 }

@@ -9,9 +9,31 @@ html, body {
   padding: 0;
 }
 
+:root {
+  --grad-from: #ec4899;
+  --grad-via: #d946ef;
+  --grad-to: #6366f1;
+  --bg-from: #fdf2f8;
+  --bg-via: #ede9fe;
+  --bg-to: #dbeafe;
+  --accent: #ec4899;
+  --accent-soft: #fce7f3;
+}
+
+[data-theme="boy"] {
+  --grad-from: #06b6d4;
+  --grad-via: #3b82f6;
+  --grad-to: #6366f1;
+  --bg-from: #ecfeff;
+  --bg-via: #dbeafe;
+  --bg-to: #e0e7ff;
+  --accent: #0ea5e9;
+  --accent-soft: #e0f2fe;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: linear-gradient(135deg, #fdf2f8 0%, #ede9fe 50%, #dbeafe 100%);
+  background: linear-gradient(135deg, var(--bg-from) 0%, var(--bg-via) 50%, var(--bg-to) 100%);
   background-attachment: fixed;
   min-height: 100svh;
   color: #1e1b4b;

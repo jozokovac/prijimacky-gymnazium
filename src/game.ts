@@ -83,8 +83,11 @@ export const BADGES: Record<BadgeId, Badge> = {
   },
 };
 
+export type Gender = 'girl' | 'boy';
+
 export type GameState = {
   name: string | null;
+  gender: Gender | null;
   xp: number;
   totalQuizzes: number;
   totalCorrect: number;
@@ -109,6 +112,7 @@ export function loadGame(): GameState {
   } catch {}
   return {
     name: null,
+    gender: null,
     xp: 0,
     totalQuizzes: 0,
     totalCorrect: 0,
