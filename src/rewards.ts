@@ -8,10 +8,10 @@ export type RewardId =
   | 'pizza-party'
   | 'pick-movie'
   | 'ice-cream-date'
-  | 'screen-time-bonus'
+  | 'pancake-brunch'
   | 'cinema-friend'
-  | 'stay-up-late'
-  | 'new-book'
+  | 'trampoline-park'
+  | 'new-comic'
   | 'sushi-night'
   | 'manicure'
   | 'sleepover'
@@ -34,10 +34,10 @@ export const REWARDS: Reward[] = [
   { id: 'pizza-party',       emoji: '🍕', title: 'Pizza večer',                  desc: 'Vyber si pizzu na piatkovú večeru pre celú rodinu.',          unlock: { kind: 'level', level: 2 } },
   { id: 'pick-movie',        emoji: '🎬', title: 'Tvoj film na večer',           desc: 'Vyberáš film na rodinný filmový večer.',                       unlock: { kind: 'level', level: 3 } },
   { id: 'ice-cream-date',    emoji: '🍦', title: 'Zmrzlina s mamou alebo otcom', desc: 'Romantická zmrzlinová prechádzka — len ty a jeden rodič.',     unlock: { kind: 'level', level: 4 } },
-  { id: 'screen-time-bonus', emoji: '📱', title: 'Bonus 1 h obrazovky',          desc: 'Extra hodina TikToku / hier / YouTube — kedykoľvek tento týždeň.', unlock: { kind: 'level', level: 5 } },
+  { id: 'pancake-brunch',    emoji: '🥞', title: 'Pancake brunch',               desc: 'Nedeľný brunch podľa tvojho výberu — palacinky, vafle, čokoľvek.', unlock: { kind: 'level', level: 5 } },
   { id: 'cinema-friend',     emoji: '🎬', title: '2× lístky do kina s kamoškou', desc: 'Vyberte si film, ideme do kina! Občerstvenie v cene.',         unlock: { kind: 'level', level: 6 } },
-  { id: 'stay-up-late',      emoji: '🌙', title: 'Ponocovanie',                  desc: 'Jeden školský deň môžeš ostať hore o 1 hodinu dlhšie.',        unlock: { kind: 'level', level: 7 } },
-  { id: 'new-book',          emoji: '📚', title: 'Nová kniha',                   desc: 'Ideme do kníhkupectva — vyberáš si akúkoľvek knihu.',          unlock: { kind: 'level', level: 8 } },
+  { id: 'trampoline-park',   emoji: '🤸', title: 'Trampolínový park',            desc: '2 hodiny v trampolínovom parku — pozvi kamošku.',              unlock: { kind: 'level', level: 7 } },
+  { id: 'new-comic',         emoji: '📖', title: 'Nový komiks',                  desc: 'Ideme do Martinusu — vyberáš si akýkoľvek komiks alebo manga.', unlock: { kind: 'level', level: 8 } },
   { id: 'sushi-night',       emoji: '🍣', title: 'Sushi večera',                 desc: 'Sushi pre celú rodinu — alebo donáška, ako chceš.',            unlock: { kind: 'level', level: 9 } },
   { id: 'manicure',          emoji: '💅', title: 'Manikúra s mamou',             desc: 'Spoločný salón — vyberáš si farbu aj dizajn.',                  unlock: { kind: 'level', level: 10 } },
   { id: 'sleepover',         emoji: '🛌', title: 'Sleepover s kamoškou',         desc: 'Pozvi kamošku, večer pizza + filmy.',                          unlock: { kind: 'level', level: 12 } },

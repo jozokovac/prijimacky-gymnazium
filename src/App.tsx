@@ -22,6 +22,7 @@ import {
   readSeenRewards,
   writeSeenRewards,
 } from './rewards';
+import { examCountdownLabel, motivationalLine } from './exam';
 
 type Subject = 'matematika' | 'slovencina' | 'mix';
 type Phase = 'home' | 'quiz' | 'results' | 'progress';
@@ -278,10 +279,13 @@ function Onboarding({ onSubmit }: { onSubmit: (name: string) => void }) {
           <br />
           na 8-ročné gymnázium 🎓
         </h1>
+        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-bold text-sm">
+          ⏳ {examCountdownLabel()}
+        </div>
         <p className="text-indigo-800/85 mt-3 text-base leading-relaxed px-1">
           Si šikovná a ja viem, že to zvládneš. 💪
           <br />
-          Krok za krokom — a po pár týždňoch budeš na prijímačkách žiariť.
+          {motivationalLine()}
         </p>
       </div>
       <div className="bg-white/85 backdrop-blur rounded-3xl shadow-xl shadow-indigo-200/40 p-5 sm:p-6 mt-5">
@@ -381,9 +385,7 @@ function Home(props: {
     : props.game.dailyStreak >= 2
     ? `Vitaj späť, ${props.game.name}! 🔥`
     : `Ahoj ${props.game.name}!`;
-  const subline = props.game.totalQuizzes === 0
-    ? 'Začnime tvoju cestu na 8-ročné gymnázium 🎓'
-    : 'Každý deň ťa posúva bližšie k prijímačkám 💪';
+  const subline = motivationalLine();
 
   return (
     <Container>
@@ -395,7 +397,10 @@ function Home(props: {
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-indigo-950 leading-tight mt-0.5">
           {greeting}
         </h1>
-        <p className="mt-1 text-sm text-indigo-700/80">{subline}</p>
+        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-700 font-bold text-xs">
+          ⏳ {examCountdownLabel()}
+        </div>
+        <p className="mt-2 text-sm text-indigo-700/80 px-2">{subline}</p>
       </header>
 
       <div className="mb-3">
